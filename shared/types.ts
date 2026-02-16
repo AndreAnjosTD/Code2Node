@@ -41,6 +41,22 @@ export interface ParsedFile {
   edges: CodeEdge[];
 }
 
+export interface CodeMetrics {
+  totalLines: number;          // Total lines including blanks/comments
+  codeLines: number;           // Non-empty, non-comment lines
+  commentLines: number;        // Lines with comments
+  blankLines: number;          // Empty lines
+  averageLinesPerFile: number; // Average file size
+  largestFile?: {
+    path: string;
+    lines: number;
+  };
+  mostComplexFile?: {
+    path: string;
+    nodes: number;
+  };
+}
+
 export interface ProjectGraph {
   projectPath: string;
   files: ParsedFile[];
@@ -51,6 +67,7 @@ export interface ProjectGraph {
     totalNodes: number;
     totalEdges: number;
     languages: Record<string, number>;
+    metrics?: CodeMetrics; // Optional for backward compatibility
   };
 }
 

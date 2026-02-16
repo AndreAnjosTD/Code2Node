@@ -3,6 +3,7 @@ import { useAppStore } from '../store';
 import { browseDirectory, scanProjectWithProgress, getInstalledIDEs, validateIDECommand, type InstalledIDE } from '../api';
 import type { NodeKind } from '../../shared/types';
 import { NODE_COLORS } from '../layout';
+import { getSearchSuggestions } from '../semanticSearch';
 
 const KIND_LABELS: Record<string, { label: string; icon: string }> = {
   file:      { label: 'Files', icon: '📄' },
@@ -361,6 +362,97 @@ export default function Sidebar() {
               <span className="stat-label">Languages</span>
             </div>
           </div>
+
+          {/* Code Metrics */}
+          {graph.stats.metrics && (
+            <>
+              <label className="section-label" style={{ marginTop: '16px' }}>Code Metrics</label>
+              <div className="stats-grid">
+                <div className="stat-item">
+                  <span className="stat-value">{graph.stats.metrics.totalLines.toLocaleString()}</span>
+                  <span className="stat-label">Total Lines</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{graph.stats.metrics.codeLines.toLocaleString()}</span>
+                  <span className="stat-label">Code Lines</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{graph.stats.metrics.commentLines.toLocaleString()}</span>
+                  <span className="stat-label">Comments</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{graph.stats.metrics.averageLinesPerFile}</span>
+                  <span className="stat-label">Avg Lines/File</span>
+                </div>
+              </div>
+
+              {/* Code Composition Bar */}
+              <div className="code-composition">
+                <div className="composition-bar">
+                  <div
+                    className="composition-segment code"
+                    style={{
+                      width: `${(graph.stats.metrics.codeLines / graph.stats.metrics.totalLines) * 100}%`,
+                    }}
+                    title={`Code: ${graph.stats.metrics.codeLines} lines`}
+                  />
+                  <div
+                    className="composition-segment comment"
+                    style={{
+                      width: `${(graph.stats.metrics.commentLines / graph.stats.metrics.totalLines) * 100}%`,
+                    }}
+                    title={`Comments: ${graph.stats.metrics.commentLines} lines`}
+                  />
+                  <div
+                    className="composition-segment blank"
+                    style={{
+                      width: `${(graph.stats.metrics.blankLines / graph.stats.metrics.totalLines) * 100}%`,
+                    }}
+                    title={`Blank: ${graph.stats.metrics.blankLines} lines`}
+                  />
+                </div>
+                <div className="composition-legend">
+                  <span className="legend-item">
+                    <span className="legend-dot code"></span>
+                    Code {Math.round((graph.stats.metrics.codeLines / graph.stats.metrics.totalLines) * 100)}%
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-dot comment"></span>
+                    Comments {Math.round((graph.stats.metrics.commentLines / graph.stats.metrics.totalLines) * 100)}%
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-dot blank"></span>
+                    Blank {Math.round((graph.stats.metrics.blankLines / graph.stats.metrics.totalLines) * 100)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* File Highlights */}
+              {(graph.stats.metrics.largestFile || graph.stats.metrics.mostComplexFile) && (
+                <div className="file-highlights">
+                  {graph.stats.metrics.largestFile && (
+                    <div className="highlight-item">
+                      <span className="highlight-label">📄 Largest File:</span>
+                      <span className="highlight-value" title={graph.stats.metrics.largestFile.path}>
+                        {graph.stats.metrics.largestFile.path.split('/').pop()} 
+                        <span className="highlight-meta"> ({graph.stats.metrics.largestFile.lines} lines)</span>
+                      </span>
+                    </div>
+                  )}
+                  {graph.stats.metrics.mostComplexFile && graph.stats.metrics.mostComplexFile.nodes > 0 && (
+                    <div className="highlight-item">
+                      <span className="highlight-label">⚡ Most Complex:</span>
+                      <span className="highlight-value" title={graph.stats.metrics.mostComplexFile.path}>
+                        {graph.stats.metrics.mostComplexFile.path.split('/').pop()}
+                        <span className="highlight-meta"> ({graph.stats.metrics.mostComplexFile.nodes} nodes)</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
           <div className="language-tags">
             {Object.entries(graph.stats.languages).map(([lang, count]) => (
               <span key={lang} className="language-tag">
@@ -385,13 +477,19 @@ export default function Sidebar() {
         <>
           {/* Search */}
           <div className="sidebar-section">
-            <label className="section-label">Search</label>
+            <label className="section-label">
+              Search
+              <span style={{ fontSize: '0.85em', opacity: 0.6, marginLeft: '6px' }}>
+                (supports concepts & fuzzy)
+              </span>
+            </label>
             <input
               type="text"
               className="text-input outliner-search-input"
-              placeholder="Search nodes..."
+              placeholder="Try: constructor, async, handler..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
+              title="Semantic search: understands code concepts, handles typos, searches properties & docs"
             />
           </div>
 

@@ -492,6 +492,110 @@ select.text-input option {
   font-family: 'JetBrains Mono', monospace;
 }
 
+/* ─── Code Metrics ─── */
+.code-composition {
+  margin-top: 12px;
+}
+
+.composition-bar {
+  display: flex;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.composition-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.composition-segment.code {
+  background: linear-gradient(90deg, #14b8a6, #0d9488);
+}
+
+.composition-segment.comment {
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+}
+
+.composition-segment.blank {
+  background: var(--bg-elevated);
+}
+
+.composition-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-dot.code {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+}
+
+.legend-dot.comment {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+}
+
+.legend-dot.blank {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ─── File Highlights ─── */
+.file-highlights {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.highlight-item {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.highlight-label {
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.highlight-value {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.highlight-meta {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
 /* ─── Filters ─── */
 .filter-grid {
   display: flex;

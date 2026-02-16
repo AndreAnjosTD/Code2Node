@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ProjectGraph, ParsedFile, CodeNode, CodeEdge } from '../shared/types.js';
+import { ProjectGraph, ParsedFile, CodeNode, CodeEdge, CodeMetrics } from '../shared/types.js';
 import { getParserForFile, getSupportedExtensions } from './parsers/index.js';
 import { resetCounters, makeNodeId, createEdge } from './parsers/base.js';
 
@@ -37,7 +37,138 @@ export interface ScanOptions {
 }
 
 /**
+ * Analyze file content to count lines
+ */
+interface FileLineStats {
+  total: number;
+  code: number;
+  comment: number;
+  blank: number;
+}
+
+function analyzeFileLines(content: string, language: string): FileLineStats {
+  const lines = content.split('\n');
+  let code = 0;
+  let comment = 0;
+  let blank = 0;
+  
+  // Simple comment detection based on language
+  const singleLineComment = language === 'python' ? '#' : '//';
+  const multiLineStart = language === 'python' ? '"""' : '/*';
+  const multiLineEnd = language === 'python' ? '"""' : '*/';
+  
+  let inMultiLineComment = false;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    if (trimmed.length === 0) {
+      blank++;
+      continue;
+    }
+    
+    // Check for multi-line comments
+    if (trimmed.includes(multiLineStart)) {
+      inMultiLineComment = true;
+    }
+    
+    if (inMultiLineComment) {
+      comment++;
+      if (trimmed.includes(multiLineEnd)) {
+        inMultiLineComment = false;
+      }
+      continue;
+    }
+    
+    // Check for single-line comments
+    if (trimmed.startsWith(singleLineComment)) {
+      comment++;
+      continue;
+    }
+    
+    // Otherwise it's code
+    code++;
+  }
+  
+  return {
+    total: lines.length,
+    code,
+    comment,
+    blank,
+  };
+}
+
+/**
+ * Calculate comprehensive code metrics
+ */
+function calculateMetrics(
+  filePaths: string[],
+  parsedFiles: ParsedFile[],
+  allNodes: CodeNode[],
+  absoluteRoot: string
+): CodeMetrics {
+  let totalLines = 0;
+  let codeLines = 0;
+  let commentLines = 0;
+  let blankLines = 0;
+  
+  let largestFile: { path: string; lines: number } | undefined;
+  let mostComplexFile: { path: string; nodes: number } | undefined;
+  
+  const fileStats = new Map<string, FileLineStats>();
+  const fileNodeCounts = new Map<string, number>();
+  
+  // Count nodes per file
+  for (const node of allNodes) {
+    fileNodeCounts.set(node.filePath, (fileNodeCounts.get(node.filePath) || 0) + 1);
+  }
+  
+  // Analyze each file
+  for (const fp of filePaths) {
+    try {
+      const content = fs.readFileSync(fp, 'utf-8');
+      const parser = getParserForFile(fp);
+      const language = parser?.language || 'text';
+      
+      const stats = analyzeFileLines(content, language);
+      const relativePath = path.relative(absoluteRoot, fp).replace(/\\/g, '/');
+      
+      fileStats.set(relativePath, stats);
+      
+      totalLines += stats.total;
+      codeLines += stats.code;
+      commentLines += stats.comment;
+      blankLines += stats.blank;
+      
+      // Track largest file
+      if (!largestFile || stats.total > largestFile.lines) {
+        largestFile = { path: relativePath, lines: stats.total };
+      }
+      
+      // Track most complex file (most nodes)
+      const nodeCount = fileNodeCounts.get(relativePath) || 0;
+      if (!mostComplexFile || nodeCount > mostComplexFile.nodes) {
+        mostComplexFile = { path: relativePath, nodes: nodeCount };
+      }
+    } catch (err) {
+      // Ignore errors, file may have been deleted or inaccessible
+    }
+  }
+  
+  return {
+    totalLines,
+    codeLines,
+    commentLines,
+    blankLines,
+    averageLinesPerFile: filePaths.length > 0 ? Math.round(totalLines / filePaths.length) : 0,
+    largestFile,
+    mostComplexFile,
+  };
+}
+
+/**
  * Recursively scan a directory and parse all supported source files.
+
  */
 export function scanProject(options: ScanOptions): ProjectGraph {
   const {
@@ -176,6 +307,9 @@ export function scanProject(options: ScanOptions): ProjectGraph {
     message: `Done! ${parsedFiles.length} files, ${allNodes.length} nodes, ${allEdges.length} edges`,
   });
 
+  // Calculate code metrics
+  const metrics = calculateMetrics(filePaths, parsedFiles, allNodes, absoluteRoot);
+
   return {
     projectPath: absoluteRoot,
     files: parsedFiles,
@@ -186,6 +320,7 @@ export function scanProject(options: ScanOptions): ProjectGraph {
       totalNodes: allNodes.length,
       totalEdges: allEdges.length,
       languages,
+      metrics,
     },
   };
 }

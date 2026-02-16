@@ -1,6 +1,7 @@
 import dagre from 'dagre';
 import type { Node, Edge } from '@xyflow/react';
 import type { ProjectGraph, CodeNode, CodeEdge, NodeKind } from '../shared/types';
+import { semanticSearchNodes } from './semanticSearch';
 
 // ─── Node colors by kind ───
 export const NODE_COLORS: Record<NodeKind, { bg: string; border: string; text: string; icon: string }> = {
@@ -72,12 +73,8 @@ export function buildFlowGraph(
   let filteredNodes = graph.nodes.filter(n => filterKinds.has(n.kind));
 
   if (searchQuery.trim()) {
-    const query = searchQuery.toLowerCase();
-    filteredNodes = filteredNodes.filter(n =>
-      n.name.toLowerCase().includes(query) ||
-      n.filePath.toLowerCase().includes(query) ||
-      n.kind.toLowerCase().includes(query)
-    );
+    // Use semantic search for intelligent matching
+    filteredNodes = semanticSearchNodes(filteredNodes, searchQuery);
   }
 
   const nodeIds = new Set(filteredNodes.map(n => n.id));

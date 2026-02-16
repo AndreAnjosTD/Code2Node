@@ -31,7 +31,7 @@ Code2Node is a powerful code visualization tool that transforms your source code
 - **Minimap**: Bird's-eye view for large codebases
 
 ### 🔎 Powerful Filtering
-- **Search**: Find nodes by name with real-time filtering
+- **Semantic Search**: Find nodes using code concepts (constructor, handler, async), fuzzy matching, property search, and documentation search
 - **Type Filters**: Show/hide classes, functions, interfaces, enums, files
 - **Keyboard-Driven**: Number keys (1-5) to toggle filters instantly
 
@@ -123,7 +123,17 @@ npm run build
 - Click line numbers to view specific occurrences
 - Use `↑`/`↓` arrows to cycle through usage lines
 
-### 5. Open Files in Your IDE
+### 5. Use Semantic Search
+- Press `S` to focus the search bar
+- Search understands programming concepts:
+  - **Concepts**: `constructor`, `handler`, `async`, `lifecycle`, `getter`, `test`, etc.
+  - **Fuzzy Matching**: Handles typos (`handlr` finds `handler`)
+  - **Multi-word**: `async handler`, `test function`, `private method`
+  - **Properties**: Searches in parameters, return types, modifiers
+  - **Documentation**: Searches within doc strings and comments
+- Examples: Try searching `constructor`, `async`, `handler`, `test functions`, or node names with typos
+
+### 6. Open Files in Your IDE
 - Set your IDE path in Settings (e.g., `code` for VS Code)
 - Select a node and press `O` to open the file at the exact line
 
@@ -263,10 +273,10 @@ case '.mylang':
 - [ ] Support for more languages (Java, Go, Rust, C#)
 - [ ] Call graph visualization
 - [ ] Export graphs as SVG/PNG
-- [ ] Semantic code search
+- [x] Semantic code search
 - [ ] Git integration (show changed files)
 - [ ] Dependency cycle detection
-- [ ] Code metrics (complexity, line count)
+- [x] Code metrics (complexity, line count)
 - [ ] Custom themes and color schemes
 - [ ] Plugin system for custom parsers
 
