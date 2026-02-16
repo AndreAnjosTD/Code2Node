@@ -37,9 +37,11 @@ Code2Node is a powerful code visualization tool that transforms your source code
 
 ### ⚡ Developer-Friendly
 - **Real-time Scanning**: Live progress updates while scanning projects
+- **Dependency Cycle Detection**: Automatically detects circular dependencies with severity levels
 - **IDE Integration**: Open files directly in VS Code via keyboard shortcut
 - **Extensive Keyboard Shortcuts**: Navigate without touching the mouse
 - **Responsive UI**: Resizable panels, collapsible sections
+- **Code Metrics**: Lines of code, file complexity, composition analysis
 
 ## 🚀 Quick Start
 
@@ -133,7 +135,19 @@ npm run build
   - **Documentation**: Searches within doc strings and comments
 - Examples: Try searching `constructor`, `async`, `handler`, `test functions`, or node names with typos
 
-### 6. Open Files in Your IDE
+### 6. Detect Dependency Cycles
+- Click the **Cycles** icon (🔄) in the activity bar to open the Cycles panel
+- View automatic detection of circular dependencies:
+  - **Summary Stats**: Total cycles, affected files, severity breakdown
+  - **Cycle List**: All detected cycles with severity indicators
+  - **Severity Levels**:
+    - 🔴 **High**: Inheritance/implementation cycles (programming errors)
+    - 🟡 **Medium**: Short import cycles (design issues)
+    - 🟢 **Low**: Long cycles or call cycles (acceptable patterns)
+- Cycles are detected by type: import, inheritance, implements, dependency, calls, references
+- A green checkmark appears when no cycles are found
+
+### 7. Open Files in Your IDE
 - Set your IDE path in Settings (e.g., `code` for VS Code)
 - Select a node and press `O` to open the file at the exact line
 
@@ -144,6 +158,7 @@ code2node/
 ├── server/              # Node.js backend
 │   ├── index.ts         # Express server with API routes
 │   ├── scanner.ts       # File system scanner
+│   ├── cycleDetector.ts # Dependency cycle detection
 │   └── parsers/         # Language parsers
 │       ├── base.ts      # Base parser utilities
 │       ├── index.ts     # Parser registry
@@ -156,11 +171,12 @@ code2node/
 │   ├── store.ts         # Zustand state management
 │   ├── api.ts           # API client
 │   ├── layout.ts        # Graph layout with Dagre
+│   ├── semanticSearch.ts # Semantic code search engine
 │   ├── styles.css       # Global styles
 │   └── components/      # React components
 │       ├── FlowCanvas.tsx       # Main graph canvas
 │       ├── CodeViewer.tsx       # Code viewer modal
-│       ├── Sidebar.tsx          # Left sidebar
+│       ├── Sidebar.tsx          # Left sidebar (with cycles panel)
 │       ├── NodeDetails.tsx      # Right panel
 │       ├── WelcomeScreen.tsx    # Initial screen
 │       ├── ScanProgress.tsx     # Progress overlay
@@ -197,6 +213,7 @@ npm run test:watch
 - ✅ **Scanner**: Directory traversal, file discovery, filtering
 - ✅ **Parsers**: TypeScript, Python, C++ syntax parsing
 - ✅ **Edge Detection**: Inheritance, imports, references
+- ✅ **Cycle Detection**: Import cycles, inheritance cycles, severity categorization
 - ✅ **Store**: State management (Zustand)
 - ✅ **Layout**: Graph layout utilities
 - ✅ **API Client**: Backend communication
@@ -275,9 +292,10 @@ case '.mylang':
 - [ ] Export graphs as SVG/PNG
 - [x] Semantic code search
 - [ ] Git integration (show changed files)
-- [ ] Dependency cycle detection
+- [x] Dependency cycle detection
 - [x] Code metrics (complexity, line count)
 - [ ] Custom themes and color schemes
+- [ ] Plugin system for custom parsers
 - [ ] Plugin system for custom parsers
 
 ## 📝 License

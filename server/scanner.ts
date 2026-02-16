@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ProjectGraph, ParsedFile, CodeNode, CodeEdge, CodeMetrics } from '../shared/types.js';
+import { ProjectGraph, ParsedFile, CodeNode, CodeEdge, CodeMetrics, DependencyCycle } from '../shared/types.js';
 import { getParserForFile, getSupportedExtensions } from './parsers/index.js';
 import { resetCounters, makeNodeId, createEdge } from './parsers/base.js';
+import { detectCycles, getFileLevelCycles } from './cycleDetector.js';
 
 const DEFAULT_EXCLUDE = [
   'node_modules', '.git', '.svn', '.hg', 'dist', 'build', 'out',
@@ -310,17 +311,36 @@ export function scanProject(options: ScanOptions): ProjectGraph {
   // Calculate code metrics
   const metrics = calculateMetrics(filePaths, parsedFiles, allNodes, absoluteRoot);
 
+  // Detect dependency cycles
+  const cycleDetection = detectCycles(allNodes, allEdges);
+  const fileLevelCycles = getFileLevelCycles(cycleDetection.cycles, allNodes);
+  const uniqueFiles = new Set(
+    cycleDetection.cycles.flatMap(c => 
+      c.nodes.map(nodeId => allNodes.find(n => n.id === nodeId)?.filePath).filter(Boolean)
+    )
+  );
+
   return {
     projectPath: absoluteRoot,
     files: parsedFiles,
     nodes: allNodes,
     edges: allEdges,
+    cycles: cycleDetection.cycles,
     stats: {
       totalFiles: parsedFiles.length,
       totalNodes: allNodes.length,
       totalEdges: allEdges.length,
       languages,
       metrics,
+      cycles: {
+        totalCycles: cycleDetection.stats.totalCycles,
+        highSeverity: cycleDetection.stats.highSeverity,
+        mediumSeverity: cycleDetection.stats.mediumSeverity,
+        lowSeverity: cycleDetection.stats.lowSeverity,
+        byType: cycleDetection.stats.byType,
+        affectedNodes: cycleDetection.affectedNodes.size,
+        affectedFiles: uniqueFiles.size,
+      },
     },
   };
 }

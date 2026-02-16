@@ -13,7 +13,7 @@ const KIND_LABELS: Record<string, { label: string; icon: string }> = {
   enum:      { label: 'Enums', icon: '≡' },
 };
 
-type PanelId = 'project' | 'outliner' | 'shortcuts';
+type PanelId = 'project' | 'outliner' | 'shortcuts' | 'cycles';
 
 /* ─── SVG Icon Components ─── */
 
@@ -49,6 +49,17 @@ function ShortcutsIcon({ size = 20 }: { size?: number }) {
       <line x1="18" y1="8" x2="18" y2="8" strokeWidth="2" strokeLinecap="round" />
       <line x1="6" y1="12" x2="18" y2="12" />
       <line x1="8" y1="16" x2="16" y2="16" />
+    </svg>
+  );
+}
+
+function CyclesIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.5 2v6h-6" />
+      <path d="M2.5 22v-6h6" />
+      <path d="M2 11.5a10 10 0 0118.8-4.3L21.5 8" />
+      <path d="M22 12.5a10 10 0 01-18.8 4.2L2.5 16" />
     </svg>
   );
 }
@@ -609,6 +620,145 @@ export default function Sidebar() {
     );
   };
 
+  /* ─── Panel: Cycles ─── */
+  const renderCyclesPanel = () => {
+    if (!graph) {
+      return (
+        <div className="ab-panel">
+          <div className="ab-panel-header">
+            <span className="ab-panel-title">Dependency Cycles</span>
+            <button className="icon-btn" onClick={() => setActiveSidebarPanel(null)} title="Close panel">✕</button>
+          </div>
+          <div className="ab-panel-body">
+            <p style={{ opacity: 0.6, padding: '20px', textAlign: 'center' }}>No project scanned</p>
+          </div>
+        </div>
+      );
+    }
+
+    const cycles = graph.cycles || [];
+    const cycleStats = graph.stats.cycles;
+
+    const getSeverityColor = (severity: 'high' | 'medium' | 'low') => {
+      switch (severity) {
+        case 'high': return '#ef4444';
+        case 'medium': return '#f59e0b';
+        case 'low': return '#10b981';
+      }
+    };
+
+    const getSeverityIcon = (severity: 'high' | 'medium' | 'low') => {
+      switch (severity) {
+        case 'high': return '🔴';
+        case 'medium': return '🟡';
+        case 'low': return '🟢';
+      }
+    };
+
+    return (
+      <div className="ab-panel">
+        <div className="ab-panel-header">
+          <span className="ab-panel-title">Dependency Cycles</span>
+          <button className="icon-btn" onClick={() => setActiveSidebarPanel(null)} title="Close panel">✕</button>
+        </div>
+        <div className="ab-panel-body">
+          {/* Summary Stats */}
+          {cycleStats && (
+            <div className="sidebar-section">
+              <label className="section-label">Summary</label>
+              <div className="stats-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                <div className="stat-item">
+                  <div className="stat-value">{cycleStats.totalCycles}</div>
+                  <div className="stat-label">Total Cycles</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-value">{cycleStats.affectedFiles}</div>
+                  <div className="stat-label">Affected Files</div>
+                </div>
+                <div className="stat-item" style={{ opacity: cycleStats.highSeverity > 0 ? 1 : 0.5 }}>
+                  <div className="stat-value" style={{ color: '#ef4444' }}>{cycleStats.highSeverity}</div>
+                  <div className="stat-label">High Severity</div>
+                </div>
+                <div className="stat-item" style={{ opacity: cycleStats.mediumSeverity > 0 ? 1 : 0.5 }}>
+                  <div className="stat-value" style={{ color: '#f59e0b' }}>{cycleStats.mediumSeverity}</div>
+                  <div className="stat-label">Medium Severity</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Cycle List */}
+          <div className="sidebar-section">
+            <label className="section-label">
+              Detected Cycles {cycles.length > 0 && `(${cycles.length})`}
+            </label>
+            {cycles.length === 0 ? (
+              <div style={{ 
+                padding: '20px', 
+                textAlign: 'center', 
+                opacity: 0.6,
+                background: 'rgba(16, 185, 129, 0.1)',
+                borderRadius: '6px',
+                border: '1px solid rgba(16, 185, 129, 0.2)'
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>✓</div>
+                <div>No dependency cycles detected!</div>
+                <div style={{ fontSize: '0.85em', marginTop: '4px' }}>Your codebase has a clean dependency structure.</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {cycles.slice(0, 20).map(cycle => {
+                  const nodeNames = cycle.nodes.map(nodeId => {
+                    const node = graph.nodes.find(n => n.id === nodeId);
+                    return node ? node.name : nodeId;
+                  });
+
+                  return (
+                    <div
+                      key={cycle.id}
+                      className="cycle-item"
+                      style={{
+                        padding: '10px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: `1px solid ${getSeverityColor(cycle.severity)}40`,
+                        borderRadius: '6px',
+                        fontSize: '0.9em',
+                      }}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px',
+                        marginBottom: '6px',
+                        fontWeight: 500 
+                      }}>
+                        <span>{getSeverityIcon(cycle.severity)}</span>
+                        <span style={{ color: getSeverityColor(cycle.severity), textTransform: 'capitalize' }}>
+                          {cycle.severity}
+                        </span>
+                        <span style={{ opacity: 0.6 }}>•</span>
+                        <span style={{ opacity: 0.8, textTransform: 'capitalize' }}>{cycle.type}</span>
+                      </div>
+                      <div style={{ opacity: 0.8, fontSize: '0.9em', fontFamily: 'monospace' }}>
+                        {nodeNames.slice(0, 3).join(' → ')}
+                        {nodeNames.length > 3 && ` → ... (${nodeNames.length} nodes)`}
+                      </div>
+                    </div>
+                  );
+                })}
+                {cycles.length > 20 && (
+                  <div style={{ padding: '10px', textAlign: 'center', opacity: 0.6, fontSize: '0.9em' }}>
+                    ... and {cycles.length - 20} more cycles
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="sidebar-wrapper">
       {/* Activity Bar */}
@@ -636,6 +786,13 @@ export default function Sidebar() {
           >
             <ShortcutsIcon />
           </button>
+          <button
+            className={`ab-btn ${activePanel === 'cycles' ? 'active' : ''}`}
+            onClick={() => togglePanel('cycles')}
+            title="Dependency Cycles"
+          >
+            <CyclesIcon />
+          </button>
         </div>
       </div>
 
@@ -643,6 +800,7 @@ export default function Sidebar() {
       {activePanel === 'project' && renderProjectPanel()}
       {activePanel === 'outliner' && renderOutlinerPanel()}
       {activePanel === 'shortcuts' && renderShortcutsPanel()}
+      {activePanel === 'cycles' && renderCyclesPanel()}
     </div>
   );
 }

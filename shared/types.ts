@@ -57,6 +57,24 @@ export interface CodeMetrics {
   };
 }
 
+export interface DependencyCycle {
+  id: string;
+  nodes: string[];        // Node IDs in the cycle
+  edges: string[];        // Edge IDs forming the cycle
+  type: EdgeKind;         // Type of cycle (import, inheritance, etc.)
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface CycleStats {
+  totalCycles: number;
+  highSeverity: number;
+  mediumSeverity: number;
+  lowSeverity: number;
+  byType: Record<string, number>;
+  affectedNodes: number;
+  affectedFiles: number;
+}
+
 export interface ProjectGraph {
   projectPath: string;
   files: ParsedFile[];
@@ -68,7 +86,9 @@ export interface ProjectGraph {
     totalEdges: number;
     languages: Record<string, number>;
     metrics?: CodeMetrics; // Optional for backward compatibility
+    cycles?: CycleStats;   // Optional for backward compatibility
   };
+  cycles?: DependencyCycle[]; // Detected dependency cycles
 }
 
 export interface ScanRequest {
