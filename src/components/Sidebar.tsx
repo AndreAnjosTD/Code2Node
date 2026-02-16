@@ -687,6 +687,45 @@ export default function Sidebar() {
             </div>
           )}
 
+          {/* Affected Files */}
+          {cycles.length > 0 && (
+            <div className="sidebar-section">
+              <label className="section-label">
+                Affected Files ({cycleStats?.affectedFiles || 0})
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto' }}>
+                {Array.from(new Set(
+                  cycles.flatMap(cycle => 
+                    cycle.nodes.map(nodeId => {
+                      const node = graph.nodes.find(n => n.id === nodeId);
+                      return node?.filePath;
+                    }).filter(Boolean)
+                  )
+                )).sort().map((filePath, idx) => {
+                  // Get relative path from project root
+                  const relativePath = filePath?.replace(graph.projectPath, '').replace(/^[\\\/]/, '') || filePath;
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '6px 8px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: '4px',
+                        fontSize: '0.85em',
+                        fontFamily: 'monospace',
+                        opacity: 0.9,
+                        wordBreak: 'break-all',
+                      }}
+                      title={filePath}
+                    >
+                      📄 {relativePath}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Cycle List */}
           <div className="sidebar-section">
             <label className="section-label">
@@ -780,18 +819,18 @@ export default function Sidebar() {
             <OutlinerIcon />
           </button>
           <button
-            className={`ab-btn ${activePanel === 'shortcuts' ? 'active' : ''}`}
-            onClick={() => togglePanel('shortcuts')}
-            title="Keyboard Shortcuts"
-          >
-            <ShortcutsIcon />
-          </button>
-          <button
             className={`ab-btn ${activePanel === 'cycles' ? 'active' : ''}`}
             onClick={() => togglePanel('cycles')}
             title="Dependency Cycles"
           >
             <CyclesIcon />
+          </button>
+          <button
+            className={`ab-btn ${activePanel === 'shortcuts' ? 'active' : ''}`}
+            onClick={() => togglePanel('shortcuts')}
+            title="Keyboard Shortcuts"
+          >
+            <ShortcutsIcon />
           </button>
         </div>
       </div>
