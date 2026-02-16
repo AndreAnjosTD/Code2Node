@@ -33,6 +33,8 @@ export default function FlowCanvas() {
   const setSelectedNode = useAppStore(s => s.setSelectedNode);
   const focusedNodeId = useAppStore(s => s.focusedNodeId);
   const setFocusedNodeId = useAppStore(s => s.setFocusedNodeId);
+  const highlightedCycle = useAppStore(s => s.highlightedCycle);
+  const setHighlightedCycle = useAppStore(s => s.setHighlightedCycle);
   const expertMode = useAppStore(s => s.expertMode);
   const setExpertMode = useAppStore(s => s.setExpertMode);
   const codeViewerNode = useAppStore(s => s.codeViewerNode);
@@ -63,10 +65,10 @@ export default function FlowCanvas() {
       return;
     }
 
-    const { nodes: flowNodes, edges: flowEdges } = buildFlowGraph(graph, filterKinds, searchQuery, focusedNodeId);
+    const { nodes: flowNodes, edges: flowEdges } = buildFlowGraph(graph, filterKinds, searchQuery, focusedNodeId, highlightedCycle);
     setNodes(flowNodes);
     setEdges(flowEdges);
-  }, [graph, filterKinds, searchQuery, focusedNodeId, setNodes, setEdges]);
+  }, [graph, filterKinds, searchQuery, focusedNodeId, highlightedCycle, setNodes, setEdges]);
 
   // Auto-fit view when entering focus/connections mode, restore viewport on exit
   const prevFocusedRef = useRef<string | null>(null);
@@ -98,6 +100,18 @@ export default function FlowCanvas() {
     }
     prevFocusedRef.current = focusedNodeId;
   }, [focusedNodeId, nodes, fitView, getViewport, setViewport, setCenter, getNodes]);
+
+  // Auto-fit view when highlighting a cycle
+  const prevCycleRef = useRef<{ nodeIds: string[]; edgeIds: string[] } | null>(null);
+  useEffect(() => {
+    if (highlightedCycle && highlightedCycle !== prevCycleRef.current) {
+      // Wait a frame for nodes to render then fit
+      requestAnimationFrame(() => {
+        fitView({ padding: 0.3, duration: 500, maxZoom: 1.5 });
+      });
+    }
+    prevCycleRef.current = highlightedCycle;
+  }, [highlightedCycle, fitView]);
 
   // When a node is selected from the sidebar, pan to it and mark it selected on the canvas
   const prevSelectedIdRef = useRef<string | null>(null);
@@ -154,10 +168,13 @@ export default function FlowCanvas() {
           break;
         }
         case 'escape': {
-          // Exit connections/focus mode
+          // Exit connections/focus mode or cycle highlight mode
           if (focusedNodeId) {
             e.preventDefault();
             setFocusedNodeId(null);
+          } else if (highlightedCycle) {
+            e.preventDefault();
+            setHighlightedCycle(null);
           }
           break;
         }

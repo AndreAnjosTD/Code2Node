@@ -42,7 +42,19 @@ export function buildFlowGraph(
   filterKinds: Set<string>,
   searchQuery: string,
   focusedNodeId?: string | null,
+  highlightedCycle?: { nodeIds: string[]; edgeIds: string[] } | null,
 ): { nodes: Node[]; edges: Edge[] } {
+  // ─── Highlighted cycle mode: show only the cycle nodes and edges ───
+  if (highlightedCycle && highlightedCycle.nodeIds.length > 0) {
+    const cycleNodeIds = new Set(highlightedCycle.nodeIds);
+    const cycleEdgeIds = new Set(highlightedCycle.edgeIds);
+    
+    const cycleNodes = graph.nodes.filter(n => cycleNodeIds.has(n.id));
+    const cycleEdges = graph.edges.filter(e => cycleEdgeIds.has(e.id));
+    
+    return layoutAndConvert(cycleNodes, cycleEdges, graph, undefined, true);
+  }
+
   // ─── Focused-node mode: show only the focused node and its direct connections ───
   if (focusedNodeId) {
     const focusedNode = graph.nodes.find(n => n.id === focusedNodeId);
@@ -96,6 +108,7 @@ function layoutAndConvert(
   filteredEdges: CodeEdge[],
   graph: ProjectGraph,
   focusedNodeId?: string,
+  isCycleMode?: boolean,
 ): { nodes: Node[]; edges: Edge[] } {
   // Pre-compute reference counts from ALL edges in the graph
   const refCounts = new Map<string, number>();
@@ -158,29 +171,29 @@ function layoutAndConvert(
   });
 
   const flowEdges: Edge[] = filteredEdges.map(edge => {
-    const color = EDGE_COLORS[edge.kind] || EDGE_COLORS.dependency;
+    const color = isCycleMode ? '#ef4444' : (EDGE_COLORS[edge.kind] || EDGE_COLORS.dependency);
     return {
       id: edge.id,
       source: edge.source,
       target: edge.target,
       type: edge.kind === 'contains' ? 'smoothstep' : 'default',
-      animated: edge.kind === 'inheritance' || edge.kind === 'implements' || edge.kind === 'references',
+      animated: isCycleMode || edge.kind === 'inheritance' || edge.kind === 'implements' || edge.kind === 'references',
       label: edge.kind !== 'contains' ? edge.label : undefined,
       style: {
         stroke: color,
-        strokeWidth: edge.kind === 'contains' ? 1 : (edge.kind === 'references' ? 2 : 2),
-        opacity: edge.kind === 'contains' ? 0.4 : 0.8,
+        strokeWidth: isCycleMode ? 3 : (edge.kind === 'contains' ? 1 : (edge.kind === 'references' ? 2 : 2)),
+        opacity: isCycleMode ? 1 : (edge.kind === 'contains' ? 0.4 : 0.8),
       },
       labelStyle: {
         fill: color,
-        fontSize: 10,
-        fontWeight: 500,
+        fontSize: isCycleMode ? 11 : 10,
+        fontWeight: isCycleMode ? 600 : 500,
       },
       markerEnd: {
         type: 'arrowclosed' as const,
         color,
-        width: 15,
-        height: 15,
+        width: isCycleMode ? 18 : 15,
+        height: isCycleMode ? 18 : 15,
       },
     };
   });

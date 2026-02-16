@@ -44,6 +44,9 @@ export interface AppState {
   // Focus mode (show connections for a specific node)
   focusedNodeId: string | null;
 
+  // Highlighted cycle (for cycle detection)
+  highlightedCycle: { nodeIds: string[]; edgeIds: string[] } | null;
+
   // Expert mode (fullscreen canvas)
   expertMode: boolean;
 
@@ -72,6 +75,7 @@ export interface AppState {
   setCodeViewerNode: (node: CodeNode | null) => void;
   setCodeViewerConnections: (connections: CodeViewerConnection[] | null) => void;
   setFocusedNodeId: (id: string | null) => void;
+  setHighlightedCycle: (cycle: { nodeIds: string[]; edgeIds: string[] } | null) => void;
   setExpertMode: (on: boolean) => void;
   setActiveSidebarPanel: (panel: string | null) => void;
   setIdeCommand: (cmd: string) => void;
@@ -90,6 +94,7 @@ const initialState = {
   codeViewerNode: null as CodeNode | null,
   codeViewerConnections: null as CodeViewerConnection[] | null,
   focusedNodeId: null as string | null,
+  highlightedCycle: null as { nodeIds: string[]; edgeIds: string[] } | null,
   expertMode: false,
   activeSidebarPanel: 'project' as string | null,
   ideCommand: localStorage.getItem('code2node_ide') || 'code',
@@ -127,6 +132,7 @@ export const useAppStore = create<AppState>((set) => ({
   setCodeViewerNode: (codeViewerNode) => set({ codeViewerNode, codeViewerConnections: codeViewerNode ? undefined : null }),
   setCodeViewerConnections: (codeViewerConnections) => set({ codeViewerConnections }),
   setFocusedNodeId: (focusedNodeId) => set({ focusedNodeId }),
+  setHighlightedCycle: (highlightedCycle) => set({ highlightedCycle, focusedNodeId: null }),
   setExpertMode: (expertMode) => set({ expertMode }),
   setActiveSidebarPanel: (activeSidebarPanel) => set({ activeSidebarPanel }),
   setIdeCommand: (ideCommand) => {

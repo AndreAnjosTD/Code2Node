@@ -83,6 +83,7 @@ export default function Sidebar() {
   const setIdeCommand = useAppStore(s => s.setIdeCommand);
   const activeSidebarPanel = useAppStore(s => s.activeSidebarPanel);
   const setActiveSidebarPanel = useAppStore(s => s.setActiveSidebarPanel);
+  const setHighlightedCycle = useAppStore(s => s.setHighlightedCycle);
 
   const activePanel = activeSidebarPanel as PanelId | null;
   const [pathInput, setPathInput] = useState(projectPath || '');
@@ -730,6 +731,11 @@ export default function Sidebar() {
           <div className="sidebar-section">
             <label className="section-label">
               Detected Cycles {cycles.length > 0 && `(${cycles.length})`}
+              {cycles.length > 0 && (
+                <span style={{ fontSize: '0.85em', opacity: 0.6, marginLeft: '6px', fontWeight: 'normal' }}>
+                  — click to view
+                </span>
+              )}
             </label>
             {cycles.length === 0 ? (
               <div style={{ 
@@ -756,12 +762,29 @@ export default function Sidebar() {
                     <div
                       key={cycle.id}
                       className="cycle-item"
+                      onClick={() => {
+                        setHighlightedCycle({
+                          nodeIds: cycle.nodes,
+                          edgeIds: cycle.edges,
+                        });
+                      }}
+                      title="Click to visualize this cycle on the canvas"
                       style={{
                         padding: '10px',
                         background: 'rgba(255, 255, 255, 0.03)',
                         border: `1px solid ${getSeverityColor(cycle.severity)}40`,
                         borderRadius: '6px',
                         fontSize: '0.9em',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.borderColor = `${getSeverityColor(cycle.severity)}80`;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                        e.currentTarget.style.borderColor = `${getSeverityColor(cycle.severity)}40`;
                       }}
                     >
                       <div style={{ 
