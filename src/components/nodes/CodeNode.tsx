@@ -206,14 +206,17 @@ function CodeNodeComponent({ data, selected }: NodeProps) {
       </div>
 
       {/* Name */}
-      <div style={{
-        fontSize: 13,
-        fontWeight: 600,
-        color: colors.text,
-        fontFamily: "'JetBrains Mono', monospace",
-        marginBottom: hasDetails ? 6 : 0,
-        lineHeight: 1.3,
-      }}>
+      <div 
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: colors.text,
+          fontFamily: "'JetBrains Mono', monospace",
+          marginBottom: hasDetails ? 6 : 0,
+          lineHeight: 1.3,
+        }}
+        title={nodeData.name.length > 24 ? nodeData.name : undefined}
+      >
         {displayName}
       </div>
 
@@ -235,15 +238,19 @@ function CodeNodeComponent({ data, selected }: NodeProps) {
             Params
           </div>
           {nodeData.parameters.slice(0, 5).map((param: string, idx: number) => (
-            <div key={idx} style={{
-              fontSize: 10,
-              color: `${colors.text}99`,
-              fontFamily: "'JetBrains Mono', monospace",
-              lineHeight: 1.6,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
+            <div 
+              key={idx} 
+              style={{
+                fontSize: 10,
+                color: `${colors.text}99`,
+                fontFamily: "'JetBrains Mono', monospace",
+                lineHeight: 1.6,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={param.length > 35 ? param : undefined}
+            >
               {param.length > 35 ? param.slice(0, 33) + '…' : param}
             </div>
           ))}
@@ -273,15 +280,19 @@ function CodeNodeComponent({ data, selected }: NodeProps) {
             Properties
           </div>
           {nodeData.properties.slice(0, 4).map((prop: string, idx: number) => (
-            <div key={idx} style={{
-              fontSize: 10,
-              color: `${colors.text}99`,
-              fontFamily: "'JetBrains Mono', monospace",
-              lineHeight: 1.6,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
+            <div 
+              key={idx} 
+              style={{
+                fontSize: 10,
+                color: `${colors.text}99`,
+                fontFamily: "'JetBrains Mono', monospace",
+                lineHeight: 1.6,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={prop.length > 35 ? prop : undefined}
+            >
               {prop.length > 35 ? prop.slice(0, 33) + '…' : prop}
             </div>
           ))}
