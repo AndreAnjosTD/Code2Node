@@ -445,6 +445,20 @@ select.text-input option {
   opacity: 1;
 }
 
+.browser-item.browser-file {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.browser-item.browser-file:hover {
+  background: transparent;
+}
+
+.browser-file-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 /* ─── Stats ─── */
 .stats-grid {
   display: grid;
@@ -879,6 +893,204 @@ select.text-input option {
 .details-show-connections-btn:hover {
   background: rgba(99, 102, 241, 0.2);
   border-color: var(--accent-primary);
+}
+
+/* ─── Secondary Button (scan-btn) ─── */
+.scan-btn {
+  padding: 7px 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.scan-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent-primary);
+}
+
+.scan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Repo-scale controls ─── */
+.repo-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.repo-toggle-row input[type='checkbox'] {
+  accent-color: var(--accent-primary);
+}
+
+.repo-control-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.repo-control-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.repo-control-select {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.repo-load-more-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.repo-telemetry-card {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.repo-telemetry-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.repo-telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  font-size: 11px;
+}
+
+.repo-telemetry-grid span {
+  color: var(--text-secondary);
+}
+
+.repo-telemetry-grid strong {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.repo-telemetry-note {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--accent-amber);
+}
+
+/* ─── Export Panel ─── */
+.export-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+.export-btn-row .scan-btn {
+  flex: 1;
+}
+
+/* ─── Insight Cards ─── */
+.insight-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insight-card {
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.25);
+}
+
+.insight-card-label {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.insight-empty {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.insight-row {
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.insight-row:hover {
+  color: var(--accent-primary);
+}
+
+.insight-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Scan Snapshot History ─── */
+.snapshot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snapshot-card {
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.3);
+  font-size: 11px;
+}
+
+.snapshot-date {
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.snapshot-metrics {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  opacity: 0.95;
+}
+
+.snapshot-delta {
+  opacity: 0.7;
 }
 
 /* ─── Error ─── */
@@ -1371,6 +1583,60 @@ select.text-input option {
   flex-wrap: wrap;
   color: var(--text-muted);
   font-size: 11px;
+}
+
+/* ─── Welcome Screen: Inline Scan Progress ─── */
+.welcome-scan-progress {
+  margin-top: 16px;
+}
+
+/* Override the overlay to render inline instead of fixed fullscreen */
+.welcome-scan-progress .scan-progress-overlay {
+  position: relative;
+  inset: auto;
+  background: transparent;
+  backdrop-filter: none;
+  z-index: auto;
+}
+
+.welcome-scan-progress .scan-progress-panel {
+  width: 100%;
+  max-width: 100%;
+}
+
+.welcome-loading-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.welcome-loading-hint .loading-spinner {
+  width: 24px;
+  height: 24px;
+}
+
+.welcome-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: #fda4af;
+  font-size: 12px;
+  text-align: left;
+}
+
+.welcome-error-icon {
+  flex-shrink: 0;
+  font-size: 16px;
 }
 
 .lang-badge {

@@ -10,10 +10,19 @@
     "dev:client": "vite",
     "build": "vite build",
     "server": "tsx server/index.ts",
+    "ci:scan": "tsx server/ci.ts",
+    "ci:scan:strict": "tsx server/ci.ts --path . --max-high-cycles 0 --max-total-cycles 0",
+    "ci:scan:lenient": "tsx server/ci.ts --path . --max-high-cycles 2 --max-total-cycles 10",
+    "ci:scan:report-only": "tsx server/ci.ts --path . --format both",
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["code-visualization", "graph", "react-flow", "codebase"],
+  "keywords": [
+    "code-visualization",
+    "graph",
+    "react-flow",
+    "codebase"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -22,6 +31,7 @@
     "dagre": "^0.8.5",
     "express": "^5.2.1",
     "glob": "^13.0.3",
+    "html-to-image": "^1.11.13",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zustand": "^5.0.11"

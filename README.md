@@ -29,6 +29,7 @@ Code2Node is a powerful code visualization tool that transforms your source code
   - Copy functionality with context menu
 - **Expert Mode**: Fullscreen canvas with minimal UI for presentations
 - **Minimap**: Bird's-eye view for large codebases
+- **Graph Snapshot Export**: Download current graph view as PNG or SVG from the UI
 
 ### 🔎 Powerful Filtering
 - **Semantic Search**: Find nodes using code concepts (constructor, handler, async), fuzzy matching, property search, and documentation search
@@ -217,6 +218,49 @@ npm run test:watch
 - ✅ **Store**: State management (Zustand)
 - ✅ **Layout**: Graph layout utilities
 - ✅ **API Client**: Backend communication
+
+## 🤖 CI / Headless Scan
+
+Generate machine-readable and shareable reports without opening the UI.
+
+```bash
+# Generate both JSON + HTML report artifacts
+npm run ci:scan -- --path ./sample --out ./artifacts --format both
+
+# JSON only
+npm run ci:scan -- --path ./sample --format json
+
+# Fail CI if high-severity cycles are detected
+npm run ci:scan -- --path ./sample --fail-on-high-cycles
+
+# Fail CI when thresholds are exceeded
+npm run ci:scan -- --path ./sample --max-high-cycles 0 --max-total-cycles 5
+
+# Strict preset for current repo (fails on any cycle)
+npm run ci:scan:strict
+
+# Lenient preset for current repo (allows limited cycle budget)
+npm run ci:scan:lenient
+
+# Report-only preset (always generates artifacts, no threshold gating)
+npm run ci:scan:report-only
+```
+
+### CLI Options
+- `--path`, `-p` (required): Project path to scan
+- `--out` (optional): Output directory (default: `artifacts`)
+- `--format` (optional): `json`, `html`, or `both` (default: `both`)
+- `--fail-on-high-cycles` (optional): Exit with code `2` if high-severity cycles exist
+- `--max-high-cycles` (optional): Exit with code `2` if high-severity cycles exceed this value
+- `--max-total-cycles` (optional): Exit with code `2` if total cycles exceed this value
+
+### GitHub Actions (PR Artifacts)
+
+This repository includes [ci-scan-report.yml](.github/workflows/ci-scan-report.yml), which runs on pull requests and manual dispatch:
+
+- Installs dependencies with `npm ci`
+- Runs `npm run ci:scan:report-only`
+- Uploads generated reports as the `code2node-ci-report` workflow artifact
 
 ## 🎨 Architecture
 

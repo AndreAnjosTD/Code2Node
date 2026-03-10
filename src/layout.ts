@@ -34,6 +34,30 @@ function getNodeHeight(node: CodeNode): number {
   return NODE_HEIGHT_BASE + Math.min(propCount, 5) * NODE_HEIGHT_PER_PROP;
 }
 
+export interface BuildFlowOptions {
+  nodeLimit?: number;
+}
+
+export interface BuildFlowMeta {
+  candidateNodes: number;
+  candidateEdges: number;
+  visibleNodes: number;
+  visibleEdges: number;
+  hiddenNodes: number;
+  hiddenEdges: number;
+}
+
+export function resolveEffectiveViewMode(
+  requestedMode: 'detailed' | 'folder',
+  autoClusterEnabled: boolean,
+  autoClusterThreshold: number,
+  totalNodes: number,
+): 'detailed' | 'folder' {
+  if (requestedMode === 'folder') return 'folder';
+  if (!autoClusterEnabled) return 'detailed';
+  return totalNodes >= autoClusterThreshold ? 'folder' : 'detailed';
+}
+
 /**
  * Convert a ProjectGraph into React Flow nodes and edges with Dagre auto-layout.
  */
@@ -43,7 +67,9 @@ export function buildFlowGraph(
   searchQuery: string,
   focusedNodeId?: string | null,
   highlightedCycle?: { nodeIds: string[]; edgeIds: string[] } | null,
-): { nodes: Node[]; edges: Edge[] } {
+  viewMode: 'detailed' | 'folder' = 'detailed',
+  options?: BuildFlowOptions,
+): { nodes: Node[]; edges: Edge[]; meta: BuildFlowMeta } {
   // ─── Highlighted cycle mode: show only the cycle nodes and edges ───
   if (highlightedCycle && highlightedCycle.nodeIds.length > 0) {
     const cycleNodeIds = new Set(highlightedCycle.nodeIds);
@@ -81,23 +107,110 @@ export function buildFlowGraph(
     }
   }
 
+  // ─── Folder-cluster mode ───
+  if (viewMode === 'folder') {
+    return buildFolderClusterGraph(graph);
+  }
+
   // ─── Normal mode with kind/search filtering ───
-  let filteredNodes = graph.nodes.filter(n => filterKinds.has(n.kind));
+  const allFilteredNodes = graph.nodes.filter(n => filterKinds.has(n.kind));
+
+  let filteredNodes = allFilteredNodes;
 
   if (searchQuery.trim()) {
     // Use semantic search for intelligent matching
     filteredNodes = semanticSearchNodes(filteredNodes, searchQuery);
   }
 
+  const allNodeIds = new Set(filteredNodes.map(n => n.id));
+
+  const allCandidateEdges = graph.edges.filter(
+    e => allNodeIds.has(e.source) && allNodeIds.has(e.target) && e.kind !== 'references'
+  );
+
+  if (options?.nodeLimit && options.nodeLimit > 0 && filteredNodes.length > options.nodeLimit) {
+    filteredNodes = filteredNodes.slice(0, options.nodeLimit);
+  }
+
   const nodeIds = new Set(filteredNodes.map(n => n.id));
 
   // Filter edges: only structural edges between visible nodes.
   // Exclude 'references' edges in normal view — they are only shown in focused mode.
-  const filteredEdges = graph.edges.filter(
-    e => nodeIds.has(e.source) && nodeIds.has(e.target) && e.kind !== 'references'
+  const filteredEdges = allCandidateEdges.filter(
+    e => nodeIds.has(e.source) && nodeIds.has(e.target)
   );
 
-  return layoutAndConvert(filteredNodes, filteredEdges, graph);
+  return layoutAndConvert(filteredNodes, filteredEdges, graph, undefined, false, {
+    candidateNodes: allFilteredNodes.length,
+    candidateEdges: allCandidateEdges.length,
+  });
+}
+
+function buildFolderClusterGraph(graph: ProjectGraph): { nodes: Node[]; edges: Edge[]; meta: BuildFlowMeta } {
+  const folderStats = new Map<string, { files: number; symbols: number }>();
+  const nodeById = new Map(graph.nodes.map(node => [node.id, node]));
+
+  const folderOf = (filePath: string): string => {
+    const clean = filePath.replace(/\\/g, '/');
+    const parts = clean.split('/').filter(Boolean);
+    return parts.length > 1 ? parts[0] : '(root)';
+  };
+
+  for (const node of graph.nodes) {
+    const folder = folderOf(node.filePath);
+    if (!folderStats.has(folder)) {
+      folderStats.set(folder, { files: 0, symbols: 0 });
+    }
+    const stats = folderStats.get(folder)!;
+    if (node.kind === 'file') {
+      stats.files += 1;
+    } else {
+      stats.symbols += 1;
+    }
+  }
+
+  const clusterNodes: CodeNode[] = Array.from(folderStats.entries()).map(([folder, stats]) => ({
+    id: `module_${folder.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+    name: folder,
+    kind: 'module',
+    filePath: folder,
+    language: 'mixed',
+    lineNumber: 1,
+    endLine: 1,
+    properties: [`files: ${stats.files}`, `symbols: ${stats.symbols}`],
+  }));
+
+  const edgeCountByFolders = new Map<string, number>();
+
+  for (const edge of graph.edges) {
+    if (edge.kind === 'contains' || edge.kind === 'references') continue;
+    const sourceNode = nodeById.get(edge.source);
+    const targetNode = nodeById.get(edge.target);
+    if (!sourceNode || !targetNode) continue;
+
+    const sourceFolder = folderOf(sourceNode.filePath);
+    const targetFolder = folderOf(targetNode.filePath);
+    if (sourceFolder === targetFolder) continue;
+
+    const key = `${sourceFolder}=>${targetFolder}`;
+    edgeCountByFolders.set(key, (edgeCountByFolders.get(key) || 0) + 1);
+  }
+
+  const clusterEdges: CodeEdge[] = Array.from(edgeCountByFolders.entries()).map(([key, count], idx) => {
+    const [sourceFolder, targetFolder] = key.split('=>');
+    return {
+      id: `cluster_edge_${idx}`,
+      source: `module_${sourceFolder.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+      target: `module_${targetFolder.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+      kind: 'dependency',
+      label: `${count} deps`,
+    };
+  });
+
+  return layoutAndConvert(clusterNodes, clusterEdges, graph, undefined, false, {
+    candidateNodes: clusterNodes.length,
+    candidateEdges: clusterEdges.length,
+  });
 }
 
 /**
@@ -109,7 +222,8 @@ function layoutAndConvert(
   graph: ProjectGraph,
   focusedNodeId?: string,
   isCycleMode?: boolean,
-): { nodes: Node[]; edges: Edge[] } {
+  metaInput?: { candidateNodes: number; candidateEdges: number },
+): { nodes: Node[]; edges: Edge[]; meta: BuildFlowMeta } {
   // Pre-compute reference counts from ALL edges in the graph
   const refCounts = new Map<string, number>();
   for (const e of graph.edges) {
@@ -198,5 +312,19 @@ function layoutAndConvert(
     };
   });
 
-  return { nodes: flowNodes, edges: flowEdges };
+  const candidateNodes = metaInput?.candidateNodes ?? filteredNodes.length;
+  const candidateEdges = metaInput?.candidateEdges ?? filteredEdges.length;
+
+  return {
+    nodes: flowNodes,
+    edges: flowEdges,
+    meta: {
+      candidateNodes,
+      candidateEdges,
+      visibleNodes: flowNodes.length,
+      visibleEdges: flowEdges.length,
+      hiddenNodes: Math.max(0, candidateNodes - flowNodes.length),
+      hiddenEdges: Math.max(0, candidateEdges - flowEdges.length),
+    },
+  };
 }

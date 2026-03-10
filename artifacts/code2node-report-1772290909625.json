@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-02-28T15:01:49.625Z",
+  "projectPath": "C:\\Users\\abanj\\Dev\\Code2Node",
+  "summary": {
+    "totalFiles": 35,
+    "totalNodes": 213,
+    "totalEdges": 518,
+    "totalCycles": 3,
+    "highSeverityCycles": 0,
+    "affectedFilesByCycles": 5,
+    "languages": {
+      "python": 1,
+      "typescript": 34
+    },
+    "topCycles": [
+      {
+        "id": "cycle-references-function_scanProject_server_scanner_ts-function_scanProject_server_scanner_ts-function_scanProject_src_api_ts",
+        "type": "references",
+        "severity": "low",
+        "size": 2
+      },
+      {
+        "id": "cycle-references-interface_DependencyCycle_server_cycleDetector_ts-interface_DependencyCycle_server_cycleDetector_ts-interface_DependencyCycle_shared_types_ts",
+        "type": "references",
+        "severity": "low",
+        "size": 2
+      },
+      {
+        "id": "cycle-references-interface_ScanProgress_server_scanner_ts-interface_ScanProgress_server_scanner_ts-interface_ScanProgress_src_store_ts",
+        "type": "references",
+        "severity": "low",
+        "size": 2
+      }
+    ]
+  }
+}

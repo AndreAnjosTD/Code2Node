@@ -77,7 +77,7 @@ export interface CycleStats {
 
 export interface ProjectGraph {
   projectPath: string;
-  files: ParsedFile[];
+  files?: ParsedFile[];   // Included server-side; stripped from API responses for bandwidth
   nodes: CodeNode[];
   edges: CodeEdge[];
   stats: {

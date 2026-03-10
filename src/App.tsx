@@ -46,18 +46,7 @@ export default function App() {
             {!expertMode && <NodeDetails />}
           </>
         ) : (
-          <>
-            {loading && scanProgress && (
-              <ScanProgressPanel progress={scanProgress} />
-            )}
-            {loading && !scanProgress && (
-              <div className="loading-overlay">
-                <div className="loading-spinner" />
-                <span>Connecting to server...</span>
-              </div>
-            )}
-            <WelcomeScreen />
-          </>
+          <WelcomeScreen />
         )}
         <CodeViewer />
       </div>

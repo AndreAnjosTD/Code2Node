@@ -46,15 +46,18 @@ describe('App Component', () => {
       expect(screen.queryByTestId('flow-canvas')).toBeNull();
     });
 
-    it('should render loading overlay when loading without progress', () => {
+    it('should render WelcomeScreen when loading without progress (progress is now inside WelcomeScreen)', () => {
       useAppStore.getState().setLoading(true);
       
       render(<App />);
       
-      expect(screen.getByText('Connecting to server...')).toBeTruthy();
+      // Loading state is handled internally by WelcomeScreen now,
+      // so App just renders WelcomeScreen without a separate overlay
+      expect(screen.getByTestId('welcome-screen')).toBeTruthy();
+      expect(screen.queryByTestId('scan-progress')).toBeNull();
     });
 
-    it('should render scan progress panel when loading with progress', () => {
+    it('should render WelcomeScreen when loading with progress (progress is now inside WelcomeScreen)', () => {
       useAppStore.getState().setLoading(true);
       useAppStore.getState().setScanProgress({
         phase: 'parsing',
@@ -69,8 +72,9 @@ describe('App Component', () => {
       
       render(<App />);
       
-      expect(screen.getByTestId('scan-progress')).toBeTruthy();
-      expect(screen.getByText(/ScanProgress: parsing/)).toBeTruthy();
+      // Scan progress is now rendered inside WelcomeScreen, not as a
+      // separate overlay in App. The mocked WelcomeScreen doesn't render it.
+      expect(screen.getByTestId('welcome-screen')).toBeTruthy();
     });
 
     it('should always render CodeViewer component', () => {

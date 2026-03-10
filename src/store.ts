@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import type { ProjectGraph, CodeNode, EdgeKind } from '../shared/types';
 
+// ─── Repo-scale defaults (importable by UI for dropdown options) ───
+export const PROGRESSIVE_INITIAL_NODES_OPTIONS = [250, 500, 1000, 2000] as const;
+export const PROGRESSIVE_LOAD_STEP_OPTIONS = [100, 250, 500, 1000] as const;
+export const AUTO_CLUSTER_THRESHOLD_OPTIONS = [500, 1000, 1200, 1500, 2500] as const;
+
+export const PROGRESSIVE_INITIAL_NODES_DEFAULT = 500;
+export const PROGRESSIVE_LOAD_STEP_DEFAULT = 250;
+export const AUTO_CLUSTER_THRESHOLD_DEFAULT = 1200;
+
 export interface CodeViewerConnection {
   name: string;       // dependency node name (search term)
   edgeKind: EdgeKind; // 'inheritance', 'references', etc.
@@ -18,6 +27,45 @@ export interface ScanProgress {
   edgesFound: number;
   languages: Record<string, number>;
   message: string;
+}
+
+export interface RenderTelemetry {
+  layoutMs: number;
+  sourceNodes: number;
+  sourceEdges: number;
+  visibleNodes: number;
+  visibleEdges: number;
+  hiddenNodes: number;
+  hiddenEdges: number;
+  effectiveViewMode: 'detailed' | 'folder';
+  progressiveActive: boolean;
+  updatedAt: number;
+}
+
+export const RENDER_TELEMETRY_INITIAL: RenderTelemetry = {
+  layoutMs: 0,
+  sourceNodes: 0,
+  sourceEdges: 0,
+  visibleNodes: 0,
+  visibleEdges: 0,
+  hiddenNodes: 0,
+  hiddenEdges: 0,
+  effectiveViewMode: 'detailed',
+  progressiveActive: false,
+  updatedAt: 0,
+};
+
+/**
+ * Compute the progressive render-node limit given the current config.
+ * Returns `null` when progressive loading is disabled or there's no graph.
+ */
+function computeRenderNodeLimit(
+  enabled: boolean,
+  initialNodes: number,
+  graph: ProjectGraph | null,
+): number | null {
+  if (!enabled || !graph) return null;
+  return Math.min(initialNodes, graph.nodes.length);
 }
 
 export interface AppState {
@@ -53,6 +101,20 @@ export interface AppState {
   // Active sidebar panel (controlled by keyboard too)
   activeSidebarPanel: string | null;
 
+  // Graph view mode
+  graphViewMode: 'detailed' | 'folder';
+
+  // Repo-scale controls
+  progressiveLoadingEnabled: boolean;
+  progressiveInitialNodes: number;
+  progressiveLoadStep: number;
+  renderNodeLimit: number | null;
+  autoClusterEnabled: boolean;
+  autoClusterThreshold: number;
+
+  // Render performance telemetry
+  renderTelemetry: RenderTelemetry;
+
   // Settings
   ideCommand: string;
 
@@ -78,6 +140,14 @@ export interface AppState {
   setHighlightedCycle: (cycle: { nodeIds: string[]; edgeIds: string[] } | null) => void;
   setExpertMode: (on: boolean) => void;
   setActiveSidebarPanel: (panel: string | null) => void;
+  setGraphViewMode: (mode: 'detailed' | 'folder') => void;
+  setProgressiveLoadingEnabled: (enabled: boolean) => void;
+  setProgressiveInitialNodes: (value: number) => void;
+  setProgressiveLoadStep: (value: number) => void;
+  loadMoreRenderNodes: () => void;
+  setAutoClusterEnabled: (enabled: boolean) => void;
+  setAutoClusterThreshold: (value: number) => void;
+  setRenderTelemetry: (telemetry: RenderTelemetry) => void;
   setIdeCommand: (cmd: string) => void;
   setFlowNodes: (nodes: Node[]) => void;
   setFlowEdges: (edges: Edge[]) => void;
@@ -97,19 +167,34 @@ const initialState = {
   highlightedCycle: null as { nodeIds: string[]; edgeIds: string[] } | null,
   expertMode: false,
   activeSidebarPanel: 'project' as string | null,
+  graphViewMode: 'detailed' as 'detailed' | 'folder',
+  progressiveLoadingEnabled: true,
+  progressiveInitialNodes: PROGRESSIVE_INITIAL_NODES_DEFAULT,
+  progressiveLoadStep: PROGRESSIVE_LOAD_STEP_DEFAULT,
+  renderNodeLimit: null as number | null,
+  autoClusterEnabled: true,
+  autoClusterThreshold: AUTO_CLUSTER_THRESHOLD_DEFAULT,
+  renderTelemetry: { ...RENDER_TELEMETRY_INITIAL },
   ideCommand: localStorage.getItem('code2node_ide') || 'code',
   searchQuery: '',
-  filterKinds: new Set(['file', 'class', 'function', 'interface', 'enum']),
+  filterKinds: new Set(['file', 'module', 'class', 'function', 'interface', 'enum', 'variable']),
   sidebarOpen: true,
   detailsOpen: false,
   flowNodes: [] as Node[],
   flowEdges: [] as Edge[],
 };
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   ...initialState,
 
-  setGraph: (graph) => set({ graph, error: null, scanProgress: null }),
+  setGraph: (graph) => set((state) => ({
+    graph,
+    error: null,
+    scanProgress: null,
+    renderNodeLimit: computeRenderNodeLimit(
+      state.progressiveLoadingEnabled, state.progressiveInitialNodes, graph,
+    ),
+  })),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error, loading: false, scanProgress: null }),
   setProjectPath: (projectPath) => set({ projectPath }),
@@ -135,6 +220,31 @@ export const useAppStore = create<AppState>((set) => ({
   setHighlightedCycle: (highlightedCycle) => set({ highlightedCycle, focusedNodeId: null }),
   setExpertMode: (expertMode) => set({ expertMode }),
   setActiveSidebarPanel: (activeSidebarPanel) => set({ activeSidebarPanel }),
+  setGraphViewMode: (graphViewMode) => set({ graphViewMode }),
+  setProgressiveLoadingEnabled: (progressiveLoadingEnabled) => set((state) => ({
+    progressiveLoadingEnabled,
+    renderNodeLimit: computeRenderNodeLimit(
+      progressiveLoadingEnabled, state.progressiveInitialNodes, state.graph,
+    ),
+  })),
+  setProgressiveInitialNodes: (progressiveInitialNodes) => set((state) => ({
+    progressiveInitialNodes,
+    renderNodeLimit: computeRenderNodeLimit(
+      state.progressiveLoadingEnabled, progressiveInitialNodes, state.graph,
+    ),
+  })),
+  setProgressiveLoadStep: (progressiveLoadStep) => set({ progressiveLoadStep }),
+  loadMoreRenderNodes: () => {
+    const state = get();
+    if (!state.graph || !state.progressiveLoadingEnabled) return;
+    const totalNodes = state.graph.nodes.length;
+    const currentLimit = state.renderNodeLimit ?? Math.min(state.progressiveInitialNodes, totalNodes);
+    const nextLimit = Math.min(totalNodes, currentLimit + state.progressiveLoadStep);
+    set({ renderNodeLimit: nextLimit });
+  },
+  setAutoClusterEnabled: (autoClusterEnabled) => set({ autoClusterEnabled }),
+  setAutoClusterThreshold: (autoClusterThreshold) => set({ autoClusterThreshold }),
+  setRenderTelemetry: (renderTelemetry) => set({ renderTelemetry }),
   setIdeCommand: (ideCommand) => {
     localStorage.setItem('code2node_ide', ideCommand);
     set({ ideCommand });

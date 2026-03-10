@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFlowGraph, NODE_COLORS, EDGE_COLORS } from '../src/layout';
+import { buildFlowGraph, NODE_COLORS, EDGE_COLORS, resolveEffectiveViewMode } from '../src/layout';
 import type { ProjectGraph, CodeNode, CodeEdge } from '../shared/types';
 
 describe('Layout', () => {
@@ -331,6 +331,30 @@ describe('Layout', () => {
       const { nodes } = buildFlowGraph(graph, filterKinds, '');
 
       expect(nodes.length).toBe(0);
+    });
+  });
+
+  describe('Repo-scale controls', () => {
+    it('should resolve effective view mode for auto-cluster thresholds', () => {
+      expect(resolveEffectiveViewMode('folder', true, 1000, 10)).toBe('folder');
+      expect(resolveEffectiveViewMode('detailed', false, 1000, 2000)).toBe('detailed');
+      expect(resolveEffectiveViewMode('detailed', true, 1000, 999)).toBe('detailed');
+      expect(resolveEffectiveViewMode('detailed', true, 1000, 1000)).toBe('folder');
+      expect(resolveEffectiveViewMode('detailed', true, 1000, 1500)).toBe('folder');
+    });
+
+    it('should apply node limit and report hidden node/edge metadata', () => {
+      const graph = createTestGraph();
+      const filterKinds = new Set(['file', 'class', 'function', 'interface']);
+
+      const result = buildFlowGraph(graph, filterKinds, '', undefined, undefined, 'detailed', { nodeLimit: 3 });
+
+      expect(result.nodes.length).toBe(3);
+      expect(result.meta.candidateNodes).toBe(5);
+      expect(result.meta.hiddenNodes).toBe(2);
+      expect(result.meta.visibleNodes).toBe(3);
+      expect(result.meta.candidateEdges).toBeGreaterThanOrEqual(result.meta.visibleEdges);
+      expect(result.meta.hiddenEdges).toBeGreaterThanOrEqual(0);
     });
   });
 });

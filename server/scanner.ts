@@ -106,7 +106,8 @@ function calculateMetrics(
   filePaths: string[],
   parsedFiles: ParsedFile[],
   allNodes: CodeNode[],
-  absoluteRoot: string
+  absoluteRoot: string,
+  lineStatsCache?: Map<string, FileLineStats>,
 ): CodeMetrics {
   let totalLines = 0;
   let codeLines = 0;
@@ -116,7 +117,6 @@ function calculateMetrics(
   let largestFile: { path: string; lines: number } | undefined;
   let mostComplexFile: { path: string; nodes: number } | undefined;
   
-  const fileStats = new Map<string, FileLineStats>();
   const fileNodeCounts = new Map<string, number>();
   
   // Count nodes per file
@@ -124,17 +124,18 @@ function calculateMetrics(
     fileNodeCounts.set(node.filePath, (fileNodeCounts.get(node.filePath) || 0) + 1);
   }
   
-  // Analyze each file
+  // Analyze each file — use cache when available, fall back to reading
   for (const fp of filePaths) {
+    const relativePath = path.relative(absoluteRoot, fp).replace(/\\/g, '/');
+
     try {
-      const content = fs.readFileSync(fp, 'utf-8');
-      const parser = getParserForFile(fp);
-      const language = parser?.language || 'text';
-      
-      const stats = analyzeFileLines(content, language);
-      const relativePath = path.relative(absoluteRoot, fp).replace(/\\/g, '/');
-      
-      fileStats.set(relativePath, stats);
+      let stats = lineStatsCache?.get(relativePath);
+      if (!stats) {
+        const content = fs.readFileSync(fp, 'utf-8');
+        const parser = getParserForFile(fp);
+        const language = parser?.language || 'text';
+        stats = analyzeFileLines(content, language);
+      }
       
       totalLines += stats.total;
       codeLines += stats.code;
@@ -234,6 +235,8 @@ export function scanProject(options: ScanOptions): ProjectGraph {
   const allNodes: CodeNode[] = [];
   const allEdges: CodeEdge[] = [];
   const languages: Record<string, number> = {};
+  // Cache line stats during parse to avoid re-reading all files later
+  const lineStatsCache = new Map<string, FileLineStats>();
 
   for (let i = 0; i < filePaths.length; i++) {
     const fp = filePaths[i];
@@ -257,6 +260,9 @@ export function scanProject(options: ScanOptions): ProjectGraph {
     try {
       const content = fs.readFileSync(fp, 'utf-8');
       const parsed = parser.parse(content, relativePath);
+
+      // Cache line stats so calculateMetrics doesn't re-read the file
+      lineStatsCache.set(relativePath, analyzeFileLines(content, parser.language));
 
       parsedFiles.push(parsed);
       allNodes.push(...parsed.nodes);
@@ -284,18 +290,35 @@ export function scanProject(options: ScanOptions): ProjectGraph {
   // Create import edges between files
   createImportEdges(allNodes, allEdges, parsedFiles);
 
-  // Resolve usage / call references across the codebase
-  emitProgress({
-    phase: 'resolving',
-    filesDiscovered: filePaths.length,
-    filesParsed: filePaths.length,
-    totalFiles: filePaths.length,
-    nodesFound: allNodes.length,
-    edgesFound: allEdges.length,
-    languages: { ...languages },
-    message: 'Resolving usage references...',
-  });
-  resolveReferences(allNodes, allEdges, absoluteRoot, filePaths);
+  // Resolve usage / call references across the codebase.
+  // For very large repos this is the most expensive step — cap it to keep
+  // memory and CPU within budget.
+  const MAX_FILES_FOR_REFERENCES = 1000;
+  if (filePaths.length <= MAX_FILES_FOR_REFERENCES) {
+    emitProgress({
+      phase: 'resolving',
+      filesDiscovered: filePaths.length,
+      filesParsed: filePaths.length,
+      totalFiles: filePaths.length,
+      nodesFound: allNodes.length,
+      edgesFound: allEdges.length,
+      languages: { ...languages },
+      message: 'Resolving usage references...',
+    });
+    resolveReferences(allNodes, allEdges, absoluteRoot, filePaths);
+  } else {
+    console.log(`  Skipped reference resolution: ${filePaths.length} files exceeds cap of ${MAX_FILES_FOR_REFERENCES}`);
+    emitProgress({
+      phase: 'resolving',
+      filesDiscovered: filePaths.length,
+      filesParsed: filePaths.length,
+      totalFiles: filePaths.length,
+      nodesFound: allNodes.length,
+      edgesFound: allEdges.length,
+      languages: { ...languages },
+      message: `Large repo (${filePaths.length} files) — skipped deep reference analysis to stay responsive.`,
+    });
+  }
 
   emitProgress({
     phase: 'complete',
@@ -308,8 +331,9 @@ export function scanProject(options: ScanOptions): ProjectGraph {
     message: `Done! ${parsedFiles.length} files, ${allNodes.length} nodes, ${allEdges.length} edges`,
   });
 
-  // Calculate code metrics
-  const metrics = calculateMetrics(filePaths, parsedFiles, allNodes, absoluteRoot);
+  // Calculate code metrics (using cached line stats to avoid re-reading files)
+  const metrics = calculateMetrics(filePaths, parsedFiles, allNodes, absoluteRoot, lineStatsCache);
+  lineStatsCache.clear(); // free memory before cycle detection
 
   // Detect dependency cycles
   const cycleDetection = detectCycles(allNodes, allEdges);
@@ -480,6 +504,9 @@ const SKIP_NAMES = new Set([
 /**
  * Scan all source files for references to known symbols (classes, functions, etc.)
  * and create 'references' edges from the calling scope to the referenced symbol.
+ *
+ * For large repos we batch the symbols into multiple regexes to avoid catastrophic
+ * backtracking / heap exhaustion from a single alternation with thousands of names.
  */
 function resolveReferences(
   nodes: CodeNode[],
@@ -488,6 +515,7 @@ function resolveReferences(
   filePaths: string[],
 ): void {
   const MIN_NAME_LEN = 3;
+  const MAX_REGEX_NAMES = 500; // split into batches to keep regex manageable
 
   // Collect searchable symbols
   type SymEntry = { searchName: string; node: CodeNode; isMethod: boolean };
@@ -509,19 +537,23 @@ function resolveReferences(
 
   if (symbols.length === 0) return;
 
-  // Build a combined regex for all unique names (longest first)
-  const uniqueNames = [...new Set(symbols.map(s => s.searchName))];
-  const escaped = uniqueNames
-    .sort((a, b) => b.length - a.length)
-    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-
-  const nameRegex = new RegExp(`\\b(${escaped.join('|')})\\b`, 'g');
-
   // Build name -> SymEntry[] lookup
   const nameMap = new Map<string, SymEntry[]>();
   for (const sym of symbols) {
     if (!nameMap.has(sym.searchName)) nameMap.set(sym.searchName, []);
     nameMap.get(sym.searchName)!.push(sym);
+  }
+
+  // Deduplicate and sort names (longest first for correct alternation matching)
+  const uniqueNames = [...new Set(symbols.map(s => s.searchName))]
+    .sort((a, b) => b.length - a.length);
+
+  // Build batched regexes — avoids single regex with thousands of alternations
+  const regexBatches: RegExp[] = [];
+  for (let i = 0; i < uniqueNames.length; i += MAX_REGEX_NAMES) {
+    const batch = uniqueNames.slice(i, i + MAX_REGEX_NAMES);
+    const escaped = batch.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    regexBatches.push(new RegExp(`\\b(${escaped.join('|')})\\b`, 'g'));
   }
 
   // Track existing edges to avoid duplicates
@@ -570,38 +602,40 @@ function resolveReferences(
       // Skip pure comment lines
       if (/^\s*(\/\/|#(?!!)|\/\*|\*\s)/.test(line)) continue;
 
-      nameRegex.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = nameRegex.exec(line)) !== null) {
-        const matched = match[1];
-        const entries = nameMap.get(matched);
-        if (!entries) continue;
+      for (const nameRegex of regexBatches) {
+        nameRegex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = nameRegex.exec(line)) !== null) {
+          const matched = match[1];
+          const entries = nameMap.get(matched);
+          if (!entries) continue;
 
-        const scope = findScope(lineNum);
-        if (!scope) continue;
+          const scope = findScope(lineNum);
+          if (!scope) continue;
 
-        for (const entry of entries) {
-          // No self-references
-          if (entry.node.id === scope.id) continue;
+          for (const entry of entries) {
+            // No self-references
+            if (entry.node.id === scope.id) continue;
 
-          // Don't reference within the target node's own definition body
-          if (entry.node.filePath === relativePath) {
-            const entryEnd = entry.node.endLine || entry.node.lineNumber + 1;
-            if (lineNum >= entry.node.lineNumber && lineNum <= entryEnd) continue;
+            // Don't reference within the target node's own definition body
+            if (entry.node.filePath === relativePath) {
+              const entryEnd = entry.node.endLine || entry.node.lineNumber + 1;
+              if (lineNum >= entry.node.lineNumber && lineNum <= entryEnd) continue;
+            }
+
+            // For methods, require .methodName( pattern
+            if (entry.isMethod) {
+              const before = line.substring(0, match.index);
+              const after = line.substring(match.index + matched.length);
+              if (!before.endsWith('.') || !/^\s*\(/.test(after)) continue;
+            }
+
+            const key = `${scope.id}|${entry.node.id}|references`;
+            if (edgeKeys.has(key)) continue;
+            edgeKeys.add(key);
+
+            edges.push(createEdge(scope.id, entry.node.id, 'references', `uses ${entry.node.name}`));
           }
-
-          // For methods, require .methodName( pattern
-          if (entry.isMethod) {
-            const before = line.substring(0, match.index);
-            const after = line.substring(match.index + matched.length);
-            if (!before.endsWith('.') || !/^\s*\(/.test(after)) continue;
-          }
-
-          const key = `${scope.id}|${entry.node.id}|references`;
-          if (edgeKeys.has(key)) continue;
-          edgeKeys.add(key);
-
-          edges.push(createEdge(scope.id, entry.node.id, 'references', `uses ${entry.node.name}`));
         }
       }
     }

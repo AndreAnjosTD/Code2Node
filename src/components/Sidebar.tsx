@@ -1,19 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { useAppStore } from '../store';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  useAppStore,
+  PROGRESSIVE_INITIAL_NODES_OPTIONS,
+  PROGRESSIVE_LOAD_STEP_OPTIONS,
+  AUTO_CLUSTER_THRESHOLD_OPTIONS,
+} from '../store';
 import { browseDirectory, scanProjectWithProgress, getInstalledIDEs, validateIDECommand, type InstalledIDE } from '../api';
 import type { NodeKind } from '../../shared/types';
 import { NODE_COLORS } from '../layout';
 import { getSearchSuggestions } from '../semanticSearch';
+import { addScanSnapshot, getScanSnapshots, type ScanSnapshot } from '../scanSnapshots';
+import { downloadReportHtml, downloadReportJson } from '../reportExport';
+import { downloadGraphPng, downloadGraphSvg } from '../graphExport';
 
 const KIND_LABELS: Record<string, { label: string; icon: string }> = {
   file:      { label: 'Files', icon: '📄' },
+  module:    { label: 'Modules', icon: '📦' },
   class:     { label: 'Classes', icon: '◆' },
   function:  { label: 'Functions', icon: '⚡' },
   interface: { label: 'Interfaces', icon: '◇' },
   enum:      { label: 'Enums', icon: '≡' },
+  variable:  { label: 'Variables', icon: '📌' },
 };
 
-type PanelId = 'project' | 'outliner' | 'shortcuts' | 'cycles';
+type PanelId = 'project' | 'outliner' | 'shortcuts' | 'cycles' | 'export';
 
 /* ─── SVG Icon Components ─── */
 
@@ -64,6 +74,16 @@ function CyclesIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+function ExportIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
 export default function Sidebar() {
   const graph = useAppStore(s => s.graph);
   const loading = useAppStore(s => s.loading);
@@ -84,15 +104,31 @@ export default function Sidebar() {
   const activeSidebarPanel = useAppStore(s => s.activeSidebarPanel);
   const setActiveSidebarPanel = useAppStore(s => s.setActiveSidebarPanel);
   const setHighlightedCycle = useAppStore(s => s.setHighlightedCycle);
+  const setFocusedNodeId = useAppStore(s => s.setFocusedNodeId);
+  const graphViewMode = useAppStore(s => s.graphViewMode);
+  const setGraphViewMode = useAppStore(s => s.setGraphViewMode);
+  const progressiveLoadingEnabled = useAppStore(s => s.progressiveLoadingEnabled);
+  const progressiveInitialNodes = useAppStore(s => s.progressiveInitialNodes);
+  const progressiveLoadStep = useAppStore(s => s.progressiveLoadStep);
+  const autoClusterEnabled = useAppStore(s => s.autoClusterEnabled);
+  const autoClusterThreshold = useAppStore(s => s.autoClusterThreshold);
+  const renderTelemetry = useAppStore(s => s.renderTelemetry);
+  const setProgressiveLoadingEnabled = useAppStore(s => s.setProgressiveLoadingEnabled);
+  const setProgressiveInitialNodes = useAppStore(s => s.setProgressiveInitialNodes);
+  const setProgressiveLoadStep = useAppStore(s => s.setProgressiveLoadStep);
+  const setAutoClusterEnabled = useAppStore(s => s.setAutoClusterEnabled);
+  const setAutoClusterThreshold = useAppStore(s => s.setAutoClusterThreshold);
+  const loadMoreRenderNodes = useAppStore(s => s.loadMoreRenderNodes);
 
   const activePanel = activeSidebarPanel as PanelId | null;
   const [pathInput, setPathInput] = useState(projectPath || '');
   const [browsing, setBrowsing] = useState(false);
-  const [browseItems, setBrowseItems] = useState<Array<{ name: string; path: string }>>([]);
+  const [browseItems, setBrowseItems] = useState<Array<{ name: string; path: string; isDirectory: boolean }>>([]);
   const [browsePath, setBrowsePath] = useState('');
   const [browseParent, setBrowseParent] = useState('');
   const [installedIDEs, setInstalledIDEs] = useState<InstalledIDE[]>([]);
   const [idesLoading, setIdesLoading] = useState(true);
+  const [scanSnapshots, setScanSnapshots] = useState<ScanSnapshot[]>([]);
 
   // Custom IDE form state
   const [showAddIDE, setShowAddIDE] = useState(false);
@@ -100,6 +136,104 @@ export default function Sidebar() {
   const [customCmd, setCustomCmd] = useState('');
   const [customError, setCustomError] = useState<string | null>(null);
   const [customValidating, setCustomValidating] = useState(false);
+
+  const actionableInsights = useMemo(() => {
+    if (!graph) {
+      return {
+        topFanIn: [] as Array<{ filePath: string; count: number }>,
+        topFanOut: [] as Array<{ filePath: string; count: number }>,
+        topCycleFiles: [] as Array<{ filePath: string; count: number }>,
+        largestCycle: null as null | { nodes: number; type: string; severity: string },
+        hotFiles: [] as Array<{ filePath: string; score: number; in: number; out: number; cycles: number }>,
+        fileSignals: new Map<string, { in: number; out: number; cycles: number; score: number }>(),
+      };
+    }
+
+    const nodeMap = new Map(graph.nodes.map(n => [n.id, n]));
+    const incomingByFile = new Map<string, number>();
+    const outgoingByFile = new Map<string, number>();
+
+    for (const edge of graph.edges) {
+      if (edge.kind === 'contains') continue;
+      const source = nodeMap.get(edge.source);
+      const target = nodeMap.get(edge.target);
+      if (!source || !target) continue;
+      outgoingByFile.set(source.filePath, (outgoingByFile.get(source.filePath) || 0) + 1);
+      incomingByFile.set(target.filePath, (incomingByFile.get(target.filePath) || 0) + 1);
+    }
+
+    const topFanIn = Array.from(incomingByFile.entries())
+      .map(([filePath, count]) => ({ filePath, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    const topFanOut = Array.from(outgoingByFile.entries())
+      .map(([filePath, count]) => ({ filePath, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    const cycleFileCounts = new Map<string, number>();
+    for (const cycle of graph.cycles || []) {
+      const uniqueCycleFiles = new Set(
+        cycle.nodes
+          .map(nodeId => nodeMap.get(nodeId)?.filePath)
+          .filter((filePath): filePath is string => !!filePath)
+      );
+      for (const filePath of uniqueCycleFiles) {
+        cycleFileCounts.set(filePath, (cycleFileCounts.get(filePath) || 0) + 1);
+      }
+    }
+
+    const topCycleFiles = Array.from(cycleFileCounts.entries())
+      .map(([filePath, count]) => ({ filePath, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    const largest = [...(graph.cycles || [])].sort((a, b) => b.nodes.length - a.nodes.length)[0];
+    const largestCycle = largest
+      ? { nodes: largest.nodes.length, type: largest.type, severity: largest.severity }
+      : null;
+
+    const candidateFiles = new Set<string>([
+      ...Array.from(incomingByFile.keys()),
+      ...Array.from(outgoingByFile.keys()),
+      ...Array.from(cycleFileCounts.keys()),
+    ]);
+
+    const fileSignals = new Map<string, { in: number; out: number; cycles: number; score: number }>();
+
+    const hotFiles = Array.from(candidateFiles)
+      .map(filePath => {
+        const inbound = incomingByFile.get(filePath) || 0;
+        const outbound = outgoingByFile.get(filePath) || 0;
+        const cycles = cycleFileCounts.get(filePath) || 0;
+        const signal = {
+          filePath,
+          in: inbound,
+          out: outbound,
+          cycles,
+          score: inbound + outbound + cycles * 4,
+        };
+        fileSignals.set(filePath, {
+          in: signal.in,
+          out: signal.out,
+          cycles: signal.cycles,
+          score: signal.score,
+        });
+        return signal;
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    return {
+      topFanIn,
+      topFanOut,
+      topCycleFiles,
+      largestCycle,
+      hotFiles,
+      fileSignals,
+    };
+  }, [graph]);
 
   // Load custom IDEs from localStorage
   const loadCustomIDEs = (): InstalledIDE[] => {
@@ -127,6 +261,14 @@ export default function Sidebar() {
       setIdesLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (!projectPath) {
+      setScanSnapshots([]);
+      return;
+    }
+    setScanSnapshots(getScanSnapshots(projectPath).slice(0, 5));
+  }, [projectPath, graph]);
 
   const handleAddCustomIDE = async () => {
     if (!customLabel.trim() || !customCmd.trim()) {
@@ -181,6 +323,8 @@ export default function Sidebar() {
         setProjectPath(pathInput.trim());
         setLoading(false);
         setScanProgress(null);
+        addScanSnapshot(pathInput.trim(), graph);
+        setScanSnapshots(getScanSnapshots(pathInput.trim()).slice(0, 5));
       },
       (error) => {
         setError(error);
@@ -209,6 +353,56 @@ export default function Sidebar() {
 
   const togglePanel = (panel: PanelId) => {
     setActiveSidebarPanel(activePanel === panel ? null : panel);
+  };
+
+  const formatDelta = (current: number, previous: number): string => {
+    const delta = current - previous;
+    if (delta === 0) return '±0';
+    return delta > 0 ? `+${delta}` : `${delta}`;
+  };
+
+  const handleGraphExport = async (format: 'png' | 'svg') => {
+    try {
+      if (format === 'png') {
+        await downloadGraphPng();
+      } else {
+        await downloadGraphSvg();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to export graph image';
+      setError(msg);
+    }
+  };
+
+  const handleInsightFileClick = (filePath: string) => {
+    if (!graph) return;
+
+    if (graphViewMode !== 'detailed') {
+      setGraphViewMode('detailed');
+    }
+
+    const targetNode =
+      graph.nodes.find(n => n.kind === 'file' && n.filePath === filePath)
+      || graph.nodes.find(n => n.filePath === filePath);
+
+    if (!targetNode) return;
+
+    setSelectedNode(targetNode);
+    setFocusedNodeId(targetNode.id);
+    setHighlightedCycle(null);
+  };
+
+
+
+  const getInsightTooltip = (filePath: string): string => {
+    const signal = actionableInsights.fileSignals.get(filePath) || { in: 0, out: 0, cycles: 0, score: 0 };
+    return [
+      `Focus ${filePath}`,
+      `Inbound deps: ${signal.in}`,
+      `Outbound deps: ${signal.out}`,
+      `Cycle involvement: ${signal.cycles}`,
+      `Risk score: ${signal.score}`,
+    ].join('\n');
   };
 
   /* ─── Panel: Project Settings ─── */
@@ -256,14 +450,20 @@ export default function Sidebar() {
               </div>
             )}
             {browseItems.map(item => (
-              <div key={item.path} className="browser-item">
-                <span onClick={() => handleBrowse(item.path)}>📁 {item.name}</span>
-                <button
-                  className="select-btn"
-                  onClick={() => handleSelectDir(item.path)}
-                >
-                  Select
-                </button>
+              <div key={item.path} className={`browser-item${item.isDirectory ? '' : ' browser-file'}`}>
+                {item.isDirectory ? (
+                  <>
+                    <span onClick={() => handleBrowse(item.path)}>📁 {item.name}</span>
+                    <button
+                      className="select-btn"
+                      onClick={() => handleSelectDir(item.path)}
+                    >
+                      Select
+                    </button>
+                  </>
+                ) : (
+                  <span className="browser-file-name">📄 {item.name}</span>
+                )}
               </div>
             ))}
             <button
@@ -341,6 +541,118 @@ export default function Sidebar() {
             >
               {customValidating ? 'Validating…' : 'Add Editor'}
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* View Mode */}
+      <div className="sidebar-section">
+        <label className="section-label">Graph View</label>
+        <div className="export-btn-row">
+          <button
+            className="scan-btn"
+            style={{ flex: 1, opacity: graphViewMode === 'detailed' ? 1 : 0.7 }}
+            onClick={() => setGraphViewMode('detailed')}
+          >
+            Detailed
+          </button>
+          <button
+            className="scan-btn"
+            style={{ flex: 1, opacity: graphViewMode === 'folder' ? 1 : 0.7 }}
+            onClick={() => setGraphViewMode('folder')}
+          >
+            Folder Clusters
+          </button>
+        </div>
+      </div>
+
+      {/* Repo-Scale Controls */}
+      <div className="sidebar-section">
+        <label className="section-label">Repo-Scale Controls</label>
+
+        <label className="repo-toggle-row">
+          <input
+            type="checkbox"
+            checked={progressiveLoadingEnabled}
+            onChange={e => setProgressiveLoadingEnabled(e.target.checked)}
+          />
+          <span>Progressive node loading</span>
+        </label>
+
+        <div className="repo-control-grid">
+          <div className="repo-control-item">
+            <span>Initial nodes</span>
+            <select
+              className="text-input repo-control-select"
+              value={progressiveInitialNodes}
+              onChange={e => setProgressiveInitialNodes(Number(e.target.value))}
+              disabled={!progressiveLoadingEnabled}
+            >
+              {PROGRESSIVE_INITIAL_NODES_OPTIONS.map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div className="repo-control-item">
+            <span>Load step</span>
+            <select
+              className="text-input repo-control-select"
+              value={progressiveLoadStep}
+              onChange={e => setProgressiveLoadStep(Number(e.target.value))}
+              disabled={!progressiveLoadingEnabled}
+            >
+              {PROGRESSIVE_LOAD_STEP_OPTIONS.map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <label className="repo-toggle-row" style={{ marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={autoClusterEnabled}
+            onChange={e => setAutoClusterEnabled(e.target.checked)}
+          />
+          <span>Auto-cluster large repos</span>
+        </label>
+
+        <div className="repo-control-item" style={{ marginTop: 6 }}>
+          <span>Auto-cluster threshold</span>
+          <select
+            className="text-input repo-control-select"
+            value={autoClusterThreshold}
+            onChange={e => setAutoClusterThreshold(Number(e.target.value))}
+            disabled={!autoClusterEnabled}
+          >
+            {AUTO_CLUSTER_THRESHOLD_OPTIONS.map(v => (
+              <option key={v} value={v}>{v} nodes</option>
+            ))}
+          </select>
+        </div>
+
+        {graph && renderTelemetry.progressiveActive && renderTelemetry.hiddenNodes > 0 && (
+          <button className="scan-btn repo-load-more-btn" onClick={() => loadMoreRenderNodes()}>
+            Load More Nodes (+{progressiveLoadStep})
+          </button>
+        )}
+
+        {graph && (
+          <div className="repo-telemetry-card">
+            <div className="repo-telemetry-title">Performance Telemetry</div>
+            <div className="repo-telemetry-grid">
+              <span>Layout</span><strong>{renderTelemetry.layoutMs.toFixed(2)} ms</strong>
+              <span>Mode</span><strong>{renderTelemetry.effectiveViewMode}</strong>
+              <span>Nodes</span><strong>{renderTelemetry.visibleNodes} / {renderTelemetry.sourceNodes}</strong>
+              <span>Edges</span><strong>{renderTelemetry.visibleEdges} / {renderTelemetry.sourceEdges}</strong>
+              <span>Hidden Nodes</span><strong>{renderTelemetry.hiddenNodes}</strong>
+              <span>Hidden Edges</span><strong>{renderTelemetry.hiddenEdges}</strong>
+            </div>
+            {autoClusterEnabled && graphViewMode === 'detailed' && renderTelemetry.effectiveViewMode === 'folder' && (
+              <div className="repo-telemetry-note">
+                Auto-cluster active (repo exceeded {autoClusterThreshold} nodes).
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -472,6 +784,184 @@ export default function Sidebar() {
               </span>
             ))}
           </div>
+
+          {/* Scan Snapshot History */}
+          {scanSnapshots.length > 0 && (
+            <>
+              <label className="section-label" style={{ marginTop: '16px' }}>Recent Scan Snapshots</label>
+              <div className="snapshot-list">
+                {scanSnapshots.map((snapshot, index) => {
+                  const previous = scanSnapshots[index + 1];
+                  return (
+                    <div key={snapshot.id} className="snapshot-card">
+                      <div className="snapshot-date">
+                        {new Date(snapshot.createdAt).toLocaleString()}
+                      </div>
+                      <div className="snapshot-metrics">
+                        <span>
+                          N {snapshot.totalNodes}
+                          {previous && <span className="snapshot-delta"> ({formatDelta(snapshot.totalNodes, previous.totalNodes)})</span>}
+                        </span>
+                        <span>
+                          E {snapshot.totalEdges}
+                          {previous && <span className="snapshot-delta"> ({formatDelta(snapshot.totalEdges, previous.totalEdges)})</span>}
+                        </span>
+                        <span>
+                          C {snapshot.totalCycles}
+                          {previous && <span className="snapshot-delta"> ({formatDelta(snapshot.totalCycles, previous.totalCycles)})</span>}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Actionable Insights */}
+          <label className="section-label" style={{ marginTop: '16px' }}>Actionable Insights</label>
+          <div className="insight-cards">
+            <div className="insight-card">
+              <div className="insight-card-label">Highest Fan-In (most depended-on files)</div>
+              {actionableInsights.topFanIn.length === 0 ? (
+                <div className="insight-empty">No dependency edges yet</div>
+              ) : actionableInsights.topFanIn.map(item => (
+                <button
+                  key={`in-${item.filePath}`}
+                  type="button"
+                  className="insight-row"
+                  onClick={() => handleInsightFileClick(item.filePath)}
+                  title={getInsightTooltip(item.filePath)}
+                >
+                  <span className="insight-row-name" title={item.filePath}>{item.filePath.split('/').pop()}</span>
+                  <strong>{item.count}</strong>
+                </button>
+              ))}
+            </div>
+
+            <div className="insight-card">
+              <div className="insight-card-label">Highest Fan-Out (most dependent files)</div>
+              {actionableInsights.topFanOut.length === 0 ? (
+                <div className="insight-empty">No dependency edges yet</div>
+              ) : actionableInsights.topFanOut.map(item => (
+                <button
+                  key={`out-${item.filePath}`}
+                  type="button"
+                  className="insight-row"
+                  onClick={() => handleInsightFileClick(item.filePath)}
+                  title={getInsightTooltip(item.filePath)}
+                >
+                  <span className="insight-row-name" title={item.filePath}>{item.filePath.split('/').pop()}</span>
+                  <strong>{item.count}</strong>
+                </button>
+              ))}
+            </div>
+
+            <div className="insight-card">
+              <div className="insight-card-label">Cycle Pressure</div>
+              {actionableInsights.largestCycle ? (
+                <div className="insight-card-label" style={{ opacity: 1 }}>
+                  Largest cycle: <strong>{actionableInsights.largestCycle.nodes} nodes</strong> ({actionableInsights.largestCycle.type}, {actionableInsights.largestCycle.severity})
+                </div>
+              ) : (
+                <div className="insight-empty">No cycles detected</div>
+              )}
+              {actionableInsights.topCycleFiles.slice(0, 2).map(item => (
+                <button
+                  key={`cycle-${item.filePath}`}
+                  type="button"
+                  className="insight-row"
+                  onClick={() => handleInsightFileClick(item.filePath)}
+                  title={getInsightTooltip(item.filePath)}
+                >
+                  <span className="insight-row-name" title={item.filePath}>{item.filePath.split('/').pop()}</span>
+                  <strong>{item.count}</strong>
+                </button>
+              ))}
+            </div>
+
+            <div className="insight-card">
+              <div className="insight-card-label">Refactor Hotspots (risk score)</div>
+              {actionableInsights.hotFiles.length === 0 ? (
+                <div className="insight-empty">Not enough signals yet</div>
+              ) : actionableInsights.hotFiles.map(item => (
+                <button
+                  key={`hot-${item.filePath}`}
+                  type="button"
+                  className="insight-row"
+                  onClick={() => handleInsightFileClick(item.filePath)}
+                  title={getInsightTooltip(item.filePath)}
+                >
+                  <span className="insight-row-name" title={item.filePath}>{item.filePath.split('/').pop()}</span>
+                  <strong>{item.score}</strong>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  /* ─── Panel: Export ─── */
+  const renderExportPanel = () => (
+    <div className="ab-panel">
+      <div className="ab-panel-header">
+        <span className="ab-panel-title">Export</span>
+        <button className="icon-btn" onClick={() => setActiveSidebarPanel(null)} title="Close panel">✕</button>
+      </div>
+
+      {graph ? (
+        <>
+          {/* Report Export */}
+          <div className="sidebar-section">
+            <label className="section-label">Project Report</label>
+            <div className="export-section">
+              <div className="export-btn-row">
+                <button
+                  className="scan-btn"
+                  onClick={() => downloadReportJson(graph)}
+                  title="Download current scan report as JSON"
+                >
+                  📄 JSON Report
+                </button>
+                <button
+                  className="scan-btn"
+                  onClick={() => downloadReportHtml(graph)}
+                  title="Download current scan report as HTML"
+                >
+                  🌐 HTML Report
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Graph Snapshot */}
+          <div className="sidebar-section">
+            <label className="section-label">Graph Snapshot</label>
+            <div className="export-section">
+              <div className="export-btn-row">
+                <button
+                  className="scan-btn"
+                  onClick={() => handleGraphExport('png')}
+                  title="Download current graph canvas as PNG (2× resolution)"
+                >
+                  🖼️ PNG Image
+                </button>
+                <button
+                  className="scan-btn"
+                  onClick={() => handleGraphExport('svg')}
+                  title="Download current graph canvas as SVG (vector)"
+                >
+                  📐 SVG Vector
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="sidebar-section" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+          Scan a project to enable exports.
         </div>
       )}
     </div>
@@ -849,6 +1339,13 @@ export default function Sidebar() {
             <CyclesIcon />
           </button>
           <button
+            className={`ab-btn ${activePanel === 'export' ? 'active' : ''}`}
+            onClick={() => togglePanel('export')}
+            title="Export"
+          >
+            <ExportIcon />
+          </button>
+          <button
             className={`ab-btn ${activePanel === 'shortcuts' ? 'active' : ''}`}
             onClick={() => togglePanel('shortcuts')}
             title="Keyboard Shortcuts"
@@ -863,6 +1360,7 @@ export default function Sidebar() {
       {activePanel === 'outliner' && renderOutlinerPanel()}
       {activePanel === 'shortcuts' && renderShortcutsPanel()}
       {activePanel === 'cycles' && renderCyclesPanel()}
+      {activePanel === 'export' && renderExportPanel()}
     </div>
   );
 }

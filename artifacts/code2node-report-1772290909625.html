@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code2Node CI Report</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; background: #0b1020; color: #e2e8f0; }
+      h1, h2 { margin: 0 0 10px; }
+      .muted { color: #94a3b8; }
+      .grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin: 16px 0 24px; }
+      .card { background: #111827; border: 1px solid #334155; border-radius: 8px; padding: 12px; }
+      .value { font-size: 24px; font-weight: 700; margin-top: 8px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { text-align: left; border-bottom: 1px solid #334155; padding: 8px; }
+      th { color: #cbd5e1; }
+      .warn { color: #f59e0b; }
+      .error { color: #ef4444; }
+    </style>
+  </head>
+  <body>
+    <h1>Code2Node CI Report</h1>
+    <p class="muted">Generated: 2026-02-28T15:01:49.625Z | Project: C:\Users\abanj\Dev\Code2Node</p>
+
+    <div class="grid">
+      <div class="card"><div>Total Files</div><div class="value">35</div></div>
+      <div class="card"><div>Total Nodes</div><div class="value">213</div></div>
+      <div class="card"><div>Total Edges</div><div class="value">518</div></div>
+      <div class="card"><div>Total Cycles</div><div class="value warn">3</div></div>
+      <div class="card"><div>High Severity Cycles</div><div class="value ">0</div></div>
+      <div class="card"><div>Affected Files</div><div class="value">5</div></div>
+    </div>
+
+    <h2>Languages</h2>
+    <ul>
+      <li><strong>typescript</strong>: 34</li><li><strong>python</strong>: 1</li>
+    </ul>
+
+    <h2>Largest Cycles</h2>
+    <table>
+      <thead>
+        <tr><th>Severity</th><th>Type</th><th>Nodes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>low</td><td>references</td><td>2</td></tr><tr><td>low</td><td>references</td><td>2</td></tr><tr><td>low</td><td>references</td><td>2</td></tr>
+      </tbody>
+    </table>
+  </body>
+</html>

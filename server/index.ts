@@ -5,6 +5,7 @@ import fs from 'fs';
 import { execSync, spawn } from 'child_process';
 import { scanProject, ScanProgress } from './scanner.js';
 import { ScanRequest, ScanResponse } from '../shared/types.js';
+import { getSupportedExtensions } from './parsers/index.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,7 +44,9 @@ app.post('/api/scan', (req, res) => {
 
     console.log(`Found ${graph.stats.totalFiles} files, ${graph.stats.totalNodes} nodes, ${graph.stats.totalEdges} edges`);
 
-    res.json({ success: true, graph } as ScanResponse);
+    // Strip the bulky `files` array — client only needs flattened nodes/edges/stats
+    const { files: _omit, ...clientGraph } = graph;
+    res.json({ success: true, graph: clientGraph } as ScanResponse);
   } catch (err) {
     console.error('Scan error:', err);
     res.status(500).json({
@@ -93,19 +96,42 @@ app.get('/api/scan-stream', (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
+  // Throttle progress events to avoid overwhelming the client on large repos
+  let lastProgressAt = 0;
+  const PROGRESS_INTERVAL_MS = 100;
+  const sendProgress = (progress: ScanProgress) => {
+    const now = Date.now();
+    // Always send phase transitions and the final tally immediately
+    if (
+      progress.phase === 'complete' ||
+      progress.phase === 'error' ||
+      progress.phase !== (lastProgressPhase ?? progress.phase) ||
+      now - lastProgressAt >= PROGRESS_INTERVAL_MS
+    ) {
+      sendEvent('progress', progress);
+      lastProgressAt = now;
+      lastProgressPhase = progress.phase;
+    }
+  };
+  let lastProgressPhase: string | undefined;
+
   try {
     console.log(`Scanning (stream): ${resolvedPath}`);
 
     const graph = scanProject({
       rootPath: resolvedPath,
       onProgress: (progress: ScanProgress) => {
-        sendEvent('progress', progress);
+        sendProgress(progress);
       },
     });
 
     console.log(`Found ${graph.stats.totalFiles} files, ${graph.stats.totalNodes} nodes, ${graph.stats.totalEdges} edges`);
 
-    sendEvent('complete', { success: true, graph });
+    // Strip the `files` array before sending — the client only needs the
+    // flattened `nodes` / `edges` arrays and `stats`. Omitting `files` avoids
+    // duplicating all per-file node/edge data, which can be enormous for large repos.
+    const { files: _omit, ...clientGraph } = graph;
+    sendEvent('complete', { success: true, graph: clientGraph });
     res.end();
   } catch (err) {
     console.error('Scan stream error:', err);
@@ -120,6 +146,7 @@ app.get('/api/scan-stream', (req, res) => {
 /**
  * GET /api/browse?path=...
  * List directory contents for the path browser.
+ * Returns sub-directories (navigable) and recognised source files (display-only).
  */
 app.get('/api/browse', (req, res) => {
   try {
@@ -132,7 +159,9 @@ app.get('/api/browse', (req, res) => {
     }
 
     const entries = fs.readdirSync(resolvedPath, { withFileTypes: true });
-    const items = entries
+    const supportedExts = getSupportedExtensions();
+
+    const dirs = entries
       .filter(e => e.isDirectory() && !e.name.startsWith('.'))
       .map(e => ({
         name: e.name,
@@ -141,10 +170,19 @@ app.get('/api/browse', (req, res) => {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    const files = entries
+      .filter(e => e.isFile() && supportedExts.some(ext => e.name.endsWith(ext)))
+      .map(e => ({
+        name: e.name,
+        path: path.join(resolvedPath, e.name).replace(/\\/g, '/'),
+        isDirectory: false,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
     res.json({
       currentPath: resolvedPath.replace(/\\/g, '/'),
       parentPath: path.dirname(resolvedPath).replace(/\\/g, '/'),
-      items,
+      items: [...dirs, ...files],
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });

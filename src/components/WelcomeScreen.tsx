@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { scanProjectWithProgress, browseDirectory } from '../api';
 import { useAppStore } from '../store';
+import { addScanSnapshot } from '../scanSnapshots';
+import ScanProgressPanel from './ScanProgress';
 
 const RECENT_PROJECTS_KEY = 'code2node_recent_projects';
 const MAX_RECENT_PROJECTS = 5;
@@ -42,10 +44,13 @@ export default function WelcomeScreen() {
   const setError = useAppStore(s => s.setError);
   const setProjectPath = useAppStore(s => s.setProjectPath);
   const setScanProgress = useAppStore(s => s.setScanProgress);
+  const loading = useAppStore(s => s.loading);
+  const scanProgress = useAppStore(s => s.scanProgress);
+  const error = useAppStore(s => s.error);
 
   const [pathInput, setPathInput] = useState('');
   const [browsing, setBrowsing] = useState(false);
-  const [browseItems, setBrowseItems] = useState<Array<{ name: string; path: string }>>([]);
+  const [browseItems, setBrowseItems] = useState<Array<{ name: string; path: string; isDirectory: boolean }>>([]);
   const [browsePath, setBrowsePath] = useState('');
   const [browseParent, setBrowseParent] = useState('');
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
@@ -72,6 +77,7 @@ export default function WelcomeScreen() {
         setScanProgress(null);
         // Add to recent projects
         addRecentProject(pathInput.trim());
+        addScanSnapshot(pathInput.trim(), graph);
       },
       (error) => {
         setError(error);
@@ -176,19 +182,48 @@ export default function WelcomeScreen() {
               placeholder="C:\path\to\your\project"
               value={pathInput}
               onChange={e => setPathInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleScan()}
+              onKeyDown={e => e.key === 'Enter' && !loading && handleScan()}
+              disabled={loading}
             />
             <button
               className="icon-btn welcome-browse-btn"
               onClick={() => handleBrowse()}
               title="Browse file system"
+              disabled={loading}
             >
               📁
             </button>
-            <button className="primary-btn welcome-btn" onClick={handleScan}>
-              🚀 Visualize
+            <button
+              className="primary-btn welcome-btn"
+              onClick={handleScan}
+              disabled={loading}
+            >
+              {loading ? '⏳ Scanning...' : '🚀 Visualize'}
             </button>
           </div>
+
+          {/* Inline scan progress on the welcome screen */}
+          {loading && scanProgress && (
+            <div className="welcome-scan-progress">
+              <ScanProgressPanel progress={scanProgress} />
+            </div>
+          )}
+
+          {/* Loading without detailed progress (initial connect) */}
+          {loading && !scanProgress && (
+            <div className="welcome-loading-hint">
+              <div className="loading-spinner" />
+              <span>Connecting to server...</span>
+            </div>
+          )}
+
+          {/* Error */}
+          {!loading && error && (
+            <div className="welcome-error">
+              <span className="welcome-error-icon">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Directory Browser */}
           {browsing && (
@@ -204,14 +239,20 @@ export default function WelcomeScreen() {
               )}
               <div className="welcome-browser-list">
                 {browseItems.map(item => (
-                  <div key={item.path} className="browser-item">
-                    <span onClick={() => handleBrowse(item.path)}>📁 {item.name}</span>
-                    <button
-                      className="select-btn"
-                      onClick={() => handleSelectDir(item.path)}
-                    >
-                      Select
-                    </button>
+                  <div key={item.path} className={`browser-item${item.isDirectory ? '' : ' browser-file'}`}>
+                    {item.isDirectory ? (
+                      <>
+                        <span onClick={() => handleBrowse(item.path)}>📁 {item.name}</span>
+                        <button
+                          className="select-btn"
+                          onClick={() => handleSelectDir(item.path)}
+                        >
+                          Select
+                        </button>
+                      </>
+                    ) : (
+                      <span className="browser-file-name">📄 {item.name}</span>
+                    )}
                   </div>
                 ))}
               </div>

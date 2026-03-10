@@ -1,0 +1,32 @@
+name: Code2Node CI Scan Report
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  scan-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate scan report artifacts
+        run: npm run ci:scan:report-only
+
+      - name: Upload scan artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: code2node-ci-report
+          path: artifacts/code2node-report-*
+          if-no-files-found: error

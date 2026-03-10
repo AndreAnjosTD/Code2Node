@@ -14,8 +14,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import CodeNodeComponent from './nodes/CodeNode';
-import { useAppStore } from '../store';
-import { buildFlowGraph, NODE_COLORS, EDGE_COLORS } from '../layout';
+import { useAppStore, RENDER_TELEMETRY_INITIAL } from '../store';
+import { buildFlowGraph, NODE_COLORS, EDGE_COLORS, resolveEffectiveViewMode } from '../layout';
 import { openFileInIDE } from '../api';
 
 const nodeTypes: NodeTypes = {
@@ -23,7 +23,7 @@ const nodeTypes: NodeTypes = {
 };
 
 const PAN_STEP = 80;
-const ZOOM_STEP = 0.25;
+const ALL_KINDS = new Set(['file', 'class', 'function', 'interface', 'enum']);
 
 export default function FlowCanvas() {
   const graph = useAppStore(s => s.graph);
@@ -45,6 +45,13 @@ export default function FlowCanvas() {
   const projectPath = useAppStore(s => s.projectPath);
   const toggleFilterKind = useAppStore(s => s.toggleFilterKind);
   const setFilterKinds = useAppStore(s => s.setFilterKinds);
+  const graphViewMode = useAppStore(s => s.graphViewMode);
+  const progressiveLoadingEnabled = useAppStore(s => s.progressiveLoadingEnabled);
+  const progressiveInitialNodes = useAppStore(s => s.progressiveInitialNodes);
+  const renderNodeLimit = useAppStore(s => s.renderNodeLimit);
+  const autoClusterEnabled = useAppStore(s => s.autoClusterEnabled);
+  const autoClusterThreshold = useAppStore(s => s.autoClusterThreshold);
+  const setRenderTelemetry = useAppStore(s => s.setRenderTelemetry);
 
   const { setCenter, getNodes, fitView, zoomIn, zoomOut, setViewport, getViewport } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -54,7 +61,6 @@ export default function FlowCanvas() {
   const preFocusViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const preFocusNodeIdRef = useRef<string | null>(null);
 
-  const ALL_KINDS = new Set(['file', 'class', 'function', 'interface', 'enum']);
   const activeFilterRef = useRef<string | null>(null);
 
   // Rebuild layout when graph or filters change
@@ -62,13 +68,69 @@ export default function FlowCanvas() {
     if (!graph) {
       setNodes([]);
       setEdges([]);
+      setRenderTelemetry({ ...RENDER_TELEMETRY_INITIAL, updatedAt: Date.now() });
       return;
     }
 
-    const { nodes: flowNodes, edges: flowEdges } = buildFlowGraph(graph, filterKinds, searchQuery, focusedNodeId, highlightedCycle);
+    const effectiveViewMode = resolveEffectiveViewMode(
+      graphViewMode,
+      autoClusterEnabled,
+      autoClusterThreshold,
+      graph.nodes.length,
+    );
+
+    const progressiveActive =
+      progressiveLoadingEnabled
+      && effectiveViewMode === 'detailed'
+      && !focusedNodeId
+      && !highlightedCycle;
+
+    const nodeLimit = progressiveActive
+      ? (renderNodeLimit ?? Math.min(progressiveInitialNodes, graph.nodes.length))
+      : undefined;
+
+    const startedAt = performance.now();
+    const { nodes: flowNodes, edges: flowEdges, meta } = buildFlowGraph(
+      graph,
+      filterKinds,
+      searchQuery,
+      focusedNodeId,
+      highlightedCycle,
+      effectiveViewMode,
+      { nodeLimit },
+    );
+    const layoutMs = performance.now() - startedAt;
+
     setNodes(flowNodes);
     setEdges(flowEdges);
-  }, [graph, filterKinds, searchQuery, focusedNodeId, highlightedCycle, setNodes, setEdges]);
+    setRenderTelemetry({
+      layoutMs: Number(layoutMs.toFixed(2)),
+      sourceNodes: graph.nodes.length,
+      sourceEdges: graph.edges.length,
+      visibleNodes: meta.visibleNodes,
+      visibleEdges: meta.visibleEdges,
+      hiddenNodes: meta.hiddenNodes,
+      hiddenEdges: meta.hiddenEdges,
+      effectiveViewMode,
+      progressiveActive,
+      updatedAt: Date.now(),
+    });
+  }, [
+    graph,
+    filterKinds,
+    searchQuery,
+    focusedNodeId,
+    highlightedCycle,
+    graphViewMode,
+    progressiveLoadingEnabled,
+    progressiveInitialNodes,
+    renderNodeLimit,
+    autoClusterEnabled,
+    autoClusterThreshold,
+    setNodes,
+    setEdges,
+    setRenderTelemetry,
+  ]);
 
   // Auto-fit view when entering focus/connections mode, restore viewport on exit
   const prevFocusedRef = useRef<string | null>(null);

@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-02-28T14:59:11.862Z",
+  "projectPath": "C:\\Users\\abanj\\Dev\\Code2Node\\sample",
+  "summary": {
+    "totalFiles": 2,
+    "totalNodes": 57,
+    "totalEdges": 102,
+    "totalCycles": 0,
+    "highSeverityCycles": 0,
+    "affectedFilesByCycles": 0,
+    "languages": {
+      "python": 1,
+      "typescript": 1
+    },
+    "topCycles": []
+  }
+}

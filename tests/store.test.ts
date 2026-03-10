@@ -274,6 +274,74 @@ describe('Store', () => {
     });
   });
 
+  describe('Repo-scale Paging', () => {
+    it('should increment render node limit and cap at total nodes', () => {
+      const mockGraph: ProjectGraph = {
+        nodes: Array.from({ length: 9 }).map((_, index) => ({
+          id: `node-${index + 1}`,
+          name: `Node${index + 1}`,
+          kind: 'class',
+          filePath: `file-${index + 1}.ts`,
+          lineNumber: 1,
+          language: 'typescript',
+        })),
+        edges: [],
+        projectPath: '/repo',
+        stats: {
+          totalFiles: 9,
+          totalNodes: 9,
+          totalEdges: 0,
+          languages: { typescript: 9 },
+        },
+      };
+
+      useAppStore.getState().setProgressiveInitialNodes(3);
+      useAppStore.getState().setProgressiveLoadStep(2);
+      useAppStore.getState().setProgressiveLoadingEnabled(true);
+      useAppStore.getState().setGraph(mockGraph);
+
+      expect(useAppStore.getState().renderNodeLimit).toBe(3);
+
+      useAppStore.getState().loadMoreRenderNodes();
+      expect(useAppStore.getState().renderNodeLimit).toBe(5);
+
+      useAppStore.getState().loadMoreRenderNodes();
+      expect(useAppStore.getState().renderNodeLimit).toBe(7);
+
+      useAppStore.getState().loadMoreRenderNodes();
+      useAppStore.getState().loadMoreRenderNodes();
+      expect(useAppStore.getState().renderNodeLimit).toBe(9);
+    });
+
+    it('should no-op load more when progressive loading is disabled', () => {
+      const mockGraph: ProjectGraph = {
+        nodes: Array.from({ length: 5 }).map((_, index) => ({
+          id: `node-${index + 1}`,
+          name: `Node${index + 1}`,
+          kind: 'class',
+          filePath: `file-${index + 1}.ts`,
+          lineNumber: 1,
+          language: 'typescript',
+        })),
+        edges: [],
+        projectPath: '/repo',
+        stats: {
+          totalFiles: 5,
+          totalNodes: 5,
+          totalEdges: 0,
+          languages: { typescript: 5 },
+        },
+      };
+
+      useAppStore.getState().setProgressiveLoadingEnabled(false);
+      useAppStore.getState().setGraph(mockGraph);
+
+      expect(useAppStore.getState().renderNodeLimit).toBeNull();
+      useAppStore.getState().loadMoreRenderNodes();
+      expect(useAppStore.getState().renderNodeLimit).toBeNull();
+    });
+  });
+
   describe('Reset', () => {
     it('should reset to initial state', () => {
       // Modify state
